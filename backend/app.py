@@ -35,3 +35,37 @@ def db_test():
             "status": "error",
             "message": str(e)
         }, 500
+
+@app.route("/api/setup-products")
+def setup_products():
+    try:
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS products (
+                id BIGSERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                price NUMERIC(10,2) NOT NULL,
+                image_url TEXT,
+                category TEXT,
+                stock INTEGER DEFAULT 0,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": "Products table created successfully"
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
