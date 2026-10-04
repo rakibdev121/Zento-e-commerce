@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f172a">
+
+  <title>NovaCart — Shop Smarter</title>
+
+  <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+  <!-- HEADER -->
+  <header class="header">
+    <a href="#" class="logo">
+      <span class="logo-icon">✦</span>
+      <span>NovaCart</span>
+    </a>
+
+    <button class="header-cart" id="headerCart">
+      🛒
+      <span class="cart-badge" id="headerCartCount">0</span>
+    </button>
+  </header>
+
+
+  <!-- SEARCH -->
+  <main>
+
+    <section class="search-section">
+      <div class="search-box">
+        <span class="search-icon">⌕</span>
+
+        <input
+          type="search"
+          id="searchInput"
+          placeholder="Search products..."
+          autocomplete="off"
+        >
+
+        <button id="clearSearch" class="clear-search" hidden>
+          ×
+        </button>
+      </div>
+    </section>
+
+
+    <!-- HERO -->
+    <section class="hero">
+
+      <div class="hero-content">
+
+        <span class="hero-label">
+          ✨ NEW COLLECTION
+        </span>
+
+        <h1>
+          Everything you need,
+          <span>one place.</span>
+        </h1>
+
+        <p>
+          Discover products you'll love at prices
+          you'll love even more.
+        </p>
+
+        <button class="primary-btn" id="shopNow">
+          Shop Now
+          <span>→</span>
+        </button>
+
+      </div>
+
+      <div class="hero-art">
+        <div class="hero-circle"></div>
+        <div class="hero-bag">🛍️</div>
+        <div class="floating-card card-one">⭐ 4.9</div>
+        <div class="floating-card card-two">🔥 30% OFF</div>
+      </div>
+
+    </section>
+
+
+    <!-- CATEGORIES -->
+    <section class="section">
+
+      <div class="section-heading">
+
+        <div>
+          <h2>Categories</h2>
+          <p>Explore our collections</p>
+        </div>
+
+        <button class="text-btn">
+          View all
+        </button>
+
+      </div>
+
+
+      <div class="categories">
+
+        <button class="category active" data-category="all">
+          <span class="category-icon">✦</span>
+          <span>All</span>
+        </button>
+
+        <button class="category" data-category="electronics">
+          <span class="category-icon">📱</span>
+          <span>Tech</span>
+        </button>
+
+        <button class="category" data-category="fashion">
+          <span class="category-icon">👕</span>
+          <span>Fashion</span>
+        </button>
+
+        <button class="category" data-category="home">
+          <span class="category-icon">🏠</span>
+          <span>Home</span>
+        </button>
+
+        <button class="category" data-category="beauty">
+          <span class="category-icon">✨</span>
+          <span>Beauty</span>
+        </button>
+
+        <button class="category" data-category="sports">
+          <span class="category-icon">⚽</span>
+          <span>Sports</span>
+        </button>
+
+      </div>
+
+    </section>
+
+
+    <!-- FLASH SALE -->
+    <section class="section sale-section">
+
+      <div class="section-heading">
+
+        <div>
+          <h2>🔥 Flash Sale</h2>
+          <p>Limited time offers</p>
+        </div>
+
+        <div class="timer">
+          <span id="hours">02</span>
+          <b>:</b>
+          <span id="minutes">45</span>
+          <b>:</b>
+          <span id="seconds">18</span>
+        </div>
+
+      </div>
+
+
+      <!-- PRODUCTS -->
+      <div class="products" id="products">
+
+
+        <!-- PRODUCT 1 -->
+        <article
+          class="product-card"
+          data-category="electronics"
+          data-name="Wireless Headphones"
+        >
+
+          <div class="product-top">
+            <span class="discount">-30%</span>
+
+            <button class="wishlist-btn" aria-label="Add to wishlist">
+              ♡
+            </button>
+          </div>
+
+          <div class="product-image headphones">
+            🎧
+          </div>
+
+          <div class="product-info">
+
+            <span class="product-category">
+              Electronics
+            </span>
+
+            <h3>Wireless Headphones</h3>
+
+            <div class="rating">
+              <span>★</span>
+              4.8
+              <small>(124)</small>
+            </div>
+
+            <div class="price-row">
+              <div class="price">
+                <strong>$49.99</strong>
+                <del>$69.99</del>
+              </div>
+
+              <button
+                class="add-cart"
+                data-product="Wireless Headphones"
+                data-price="49.99"
+              >
+                +
+              </button>
+            </div>
+
+          </div>
+
+        </article>
+
+
+        <!-- PRODUCT 2 -->
+        <article
+          class="product-card"
+          data-category="electronics"
+          data-name="Smart Watch Pro"
+        >
+
+          <div class="product-top">
+            <span class="discount">-25%</span>
+
+            <button class="wishlist-btn" aria-label="Add to wishlist">
+              ♡
+            </button>
+          </div>
+
+          <div class="product-image smartwatch">
+            ⌚
+          </div>
+
+          <div class="product-info">
+
+            <span class="product-category">
+              Electronics
+            </span>
+
+            <h3>Smart Watch Pro</h3>
+
+            <div class="rating">
+              <span>★</span>
+              4.7
+              <small>(89)</small>
+            </div>
+
+            <div class="price-row">
+              <div class="price">
+                <strong>$59.99</strong>
+                <del>$79.99</del>
+              </div>
+
+              <button
+                class="add-cart"
+                data-product="Smart Watch Pro"
+                data-price="59.99"
+              >
+                +
+              </button>
+            </div>
+
+          </div>
+
+        </article>
+
+
+        <!-- PRODUCT 3 -->
+        <article
+          class="product-card"
+          data-category="fashion"
+          data-name="Urban Backpack"
+        >
+
+          <div class="product-top">
+            <span class="discount">-20%</span>
+
+            <button class="wishlist-btn" aria-label="Add to wishlist">
+              ♡
+            </button>
+          </div>
+
+          <div class="product-image backpack">
+            🎒
+          </div>
+
+          <div class="product-info">
+
+            <span class="product-category">
+              Fashion
+            </span>
+
+            <h3>Urban Backpack</h3>
+
+            <div class="rating">
+              <span>★</span>
+              4.6
+              <small>(76)</small>
+            </div>
+
+            <div class="price-row">
+              <div class="price">
+                <strong>$39.99</strong>
+                <del>$49.99</del>
+              </div>
+
+              <button
+                class="add-cart"
+                data-product="Urban Backpack"
+                data-price="39.99"
+              >
+                +
+              </button>
+            </div>
+
+          </div>
+
+        </article>
+
+
+        <!-- PRODUCT 4 -->
+        <article
+          class="product-card"
+          data-category="beauty"
+          data-name="Glow Skin Set"
+        >
+
+          <div class="product-top">
+            <span class="discount">-35%</span>
+
+            <button class="wishlist-btn" aria-label="Add to wishlist">
+              ♡
+            </button>
+          </div>
+
+          <div class="product-image beauty">
+            🧴
+          </div>
+
+          <div class="product-info">
+
+            <span class="product-category">
+              Beauty
+            </span>
+
+            <h3>Glow Skin Set</h3>
+
+            <div class="rating">
+              <span>★</span>
+              4.9
+              <small>(203)</small>
+            </div>
+
+            <div class="price-row">
+              <div class="price">
+                <strong>$29.99</strong>
+                <del>$45.99</del>
+              </div>
+
+              <button
+                class="add-cart"
+                data-product="Glow Skin Set"
+                data-price="29.99"
+              >
+                +
+              </button>
+            </div>
+
+          </div>
+
+        </article>
+
+      </div>
+
+
+      <!-- NO RESULT -->
+      <div id="noResults" class="no-results" hidden>
+        <div>🔎</div>
+        <h3>No products found</h3>
+        <p>Try another search.</p>
+      </div>
+
+    </section>
+
+
+    <!-- TRUST -->
+    <section class="trust-section">
+
+      <div class="trust-item">
+        <span>🚚</span>
+        <div>
+          <strong>Fast Delivery</strong>
+          <small>Quick & reliable</small>
+        </div>
+      </div>
+
+      <div class="trust-item">
+        <span>🔒</span>
+        <div>
+          <strong>Secure Payment</strong>
+          <small>100% protected</small>
+        </div>
+      </div>
+
+      <div class="trust-item">
+        <span>↩️</span>
+        <div>
+          <strong>Easy Returns</strong>
+          <small>7-day returns</small>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <!-- BOTTOM NAVIGATION -->
+  <nav class="bottom-nav">
+
+    <a href="#" class="nav-item active">
+      <span>⌂</span>
+      <small>Home</small>
+    </a>
+
+    <a href="#products" class="nav-item">
+      <span>◉</span>
+      <small>Shop</small>
+    </a>
+
+    <a href="#" class="nav-item cart-nav" id="cartNav">
+      <span>
+        🛒
+        <b id="cartCount">0</b>
+      </span>
+      <small>Cart</small>
+    </a>
+
+    <a href="#" class="nav-item">
+      <span>♡</span>
+      <small>Wishlist</small>
+    </a>
+
+    <a href="#" class="nav-item">
+      <span>♙</span>
+      <small>Profile</small>
+    </a>
+
+  </nav>
+
+
+  <!-- TOAST -->
+  <div id="toast" class="toast">
+    Added to cart 🛒
+  </div>
+
+
+  <script src="js/app.js"></script>
+
+</body>
+</html>
