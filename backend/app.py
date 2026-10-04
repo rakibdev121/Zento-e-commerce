@@ -237,3 +237,67 @@ def login():
             "status": "error",
             "message": str(e)
         }, 500
+
+@app.route("/api/create-admin", methods=["POST"])
+def create_admin():
+    try:
+        data = request.get_json() or {}
+
+        name = data.get("name")
+        email = data.get("email")
+        password = data.get("password")
+
+        if not name or not email or not password:
+            return {
+                "status": "error",
+                "message": "Name, email and password are required"
+            }, 400
+
+        if len(password) < 8:
+            return {
+                "status": "error",
+                "message": "Password must be at least 8 characters"
+            }, 400
+
+        password_hash = generate_password_hash(password)
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO users (name, email, password_hash, role)
+            VALUES (%s, %s, %s, 'admin')
+            RETURNING id, name, email, role
+            """,
+            (name, email.lower().strip(), password_hash)
+        )
+
+        admin = cursor.fetchone()
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": "Admin account created successfully",
+            "admin": {
+                "id": admin[0],
+                "name": admin[1],
+                "email": admin[2],
+                "role": admin[3]
+            }
+        }, 201
+
+    except psycopg2.errors.UniqueViolation:
+        return {
+            "status": "error",
+            "message": "Email already exists"
+        }, 409
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
