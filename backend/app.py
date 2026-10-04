@@ -335,3 +335,37 @@ def delete_admin(user_id):
             "status": "error",
             "message": str(e)
         }, 500
+
+@app.route("/api/delete-admin/<int:user_id>", methods=["DELETE"])
+def delete_admin(user_id):
+    try:
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "DELETE FROM users WHERE id = %s AND role = 'admin' RETURNING id",
+            (user_id,)
+        )
+
+        deleted = cursor.fetchone()
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        if not deleted:
+            return {
+                "status": "error",
+                "message": "Admin not found"
+            }, 404
+
+        return {
+            "status": "success",
+            "message": "Admin deleted successfully"
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
