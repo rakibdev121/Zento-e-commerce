@@ -881,3 +881,18 @@ a {
   }
 }
 
+
+/* ---------- AUTH MODE ---------- */
+
+body.auth-active > header,
+body.auth-active > main,
+body.auth-active > nav,
+body.auth-active > .bottom-nav,
+body.auth-active > .toast {
+  display: none !important;
+}
+
+body.auth-active {
+  overflow: hidden;
+}
+

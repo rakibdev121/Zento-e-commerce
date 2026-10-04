@@ -1,11 +1,13 @@
 import os
 import psycopg2
+from flask_cors import CORS
 from flask import Flask
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app)
 
 @app.route("/")
 def home():
