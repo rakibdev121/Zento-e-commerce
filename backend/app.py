@@ -69,3 +69,35 @@ def setup_products():
             "status": "error",
             "message": str(e)
         }, 500
+
+@app.route("/api/setup-users")
+def setup_users():
+    try:
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id BIGSERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": "Users table created successfully"
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
