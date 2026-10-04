@@ -12,6 +12,64 @@
 
 <body>
 
+
+  <!-- AUTH SCREEN -->
+  <section id="authScreen" class="auth-screen">
+    <div class="auth-card">
+
+      <div class="auth-logo">
+        <span>✦</span>
+        <strong>Zento</strong>
+      </div>
+
+      <!-- LOGIN -->
+      <div id="loginForm">
+        <h1>Welcome back</h1>
+        <p>Login to continue shopping</p>
+
+        <form id="loginFormElement">
+          <input type="email" id="loginEmail" placeholder="Gmail address" required>
+          <input type="password" id="loginPassword" placeholder="Password" required>
+
+          <button type="submit" class="primary-btn">
+            Login
+          </button>
+        </form>
+
+        <p class="auth-switch">
+          Don't have an account?
+          <button type="button" id="showSignup">Sign Up</button>
+        </p>
+
+        <p id="loginMessage" class="auth-message"></p>
+      </div>
+
+      <!-- SIGNUP -->
+      <div id="signupForm" hidden>
+        <h1>Create account</h1>
+        <p>Join Zento and start shopping</p>
+
+        <form id="signupFormElement">
+          <input type="text" id="signupName" placeholder="Your name" required>
+          <input type="email" id="signupEmail" placeholder="Gmail address" required>
+          <input type="password" id="signupPassword" placeholder="Password (8+ characters)" minlength="8" required>
+
+          <button type="submit" class="primary-btn">
+            Create Account
+          </button>
+        </form>
+
+        <p class="auth-switch">
+          Already have an account?
+          <button type="button" id="showLogin">Login</button>
+        </p>
+
+        <p id="signupMessage" class="auth-message"></p>
+      </div>
+
+    </div>
+  </section>
+
   <!-- HEADER -->
   <header class="header">
     <a href="#" class="logo">

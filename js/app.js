@@ -318,3 +318,159 @@ document.addEventListener("DOMContentLoaded", () => {
   filterProducts();
 
 });
+
+/* =========================================
+   ZENTO - AUTHENTICATION
+========================================= */
+
+document.addEventListener("DOMContentLoaded", () => {
+  const API_URL = "https://zento-e-commerce-40xm.onrender.com";
+
+  const authScreen = document.getElementById("authScreen");
+  const loginForm = document.getElementById("loginForm");
+  const signupForm = document.getElementById("signupForm");
+
+  const loginFormElement = document.getElementById("loginFormElement");
+  const signupFormElement = document.getElementById("signupFormElement");
+
+  const showSignup = document.getElementById("showSignup");
+  const showLogin = document.getElementById("showLogin");
+
+  const loginMessage = document.getElementById("loginMessage");
+  const signupMessage = document.getElementById("signupMessage");
+
+  function showLoginScreen() {
+    loginForm.hidden = false;
+    signupForm.hidden = true;
+    loginMessage.textContent = "";
+    signupMessage.textContent = "";
+  }
+
+  function showSignupScreen() {
+    loginForm.hidden = true;
+    signupForm.hidden = false;
+    loginMessage.textContent = "";
+    signupMessage.textContent = "";
+  }
+
+  function showHome() {
+    authScreen.style.display = "none";
+    document.body.classList.remove("auth-active");
+  }
+
+  function showAuth() {
+    authScreen.style.display = "flex";
+    document.body.classList.add("auth-active");
+  }
+
+  showSignup?.addEventListener("click", showSignupScreen);
+  showLogin?.addEventListener("click", showLoginScreen);
+
+  /* ---------- CHECK LOGIN ---------- */
+
+  const token = localStorage.getItem("zento_token");
+
+  if (token) {
+    showHome();
+  } else {
+    showAuth();
+    showLoginScreen();
+  }
+
+  /* ---------- SIGNUP ---------- */
+
+  signupFormElement?.addEventListener("submit", async event => {
+    event.preventDefault();
+
+    const name = document.getElementById("signupName").value.trim();
+    const email = document.getElementById("signupEmail").value.trim();
+    const password = document.getElementById("signupPassword").value;
+
+    signupMessage.textContent = "Creating account...";
+
+    try {
+      const response = await fetch(`${API_URL}/api/signup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          password
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        signupMessage.textContent =
+          data.message || "Signup failed";
+        return;
+      }
+
+      signupMessage.textContent =
+        "Account created successfully. Please login.";
+
+      signupFormElement.reset();
+
+      setTimeout(() => {
+        showLoginScreen();
+        document.getElementById("loginEmail").value = email;
+      }, 800);
+
+    } catch (error) {
+      signupMessage.textContent =
+        "Unable to connect to server.";
+    }
+  });
+
+  /* ---------- LOGIN ---------- */
+
+  loginFormElement?.addEventListener("submit", async event => {
+    event.preventDefault();
+
+    const email = document.getElementById("loginEmail").value.trim();
+    const password = document.getElementById("loginPassword").value;
+
+    loginMessage.textContent = "Logging in...";
+
+    try {
+      const response = await fetch(`${API_URL}/api/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          email,
+          password
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        loginMessage.textContent =
+          data.message || "Login failed";
+        return;
+      }
+
+      localStorage.setItem("zento_token", data.token);
+      localStorage.setItem(
+        "zento_user",
+        JSON.stringify(data.user)
+      );
+
+      loginMessage.textContent = "Login successful!";
+
+      setTimeout(() => {
+        showHome();
+      }, 500);
+
+    } catch (error) {
+      loginMessage.textContent =
+        "Unable to connect to server.";
+    }
+  });
+});
+
