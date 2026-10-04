@@ -1,4 +1,9 @@
+import os
+import psycopg2
 from flask import Flask
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -9,5 +14,24 @@ def home():
         "message": "Zento E-commerce Backend is running"
     }
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+@app.route("/api/db-test")
+def db_test():
+    try:
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+        cursor.execute("SELECT NOW()")
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "database": "connected",
+            "time": str(result[0])
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
