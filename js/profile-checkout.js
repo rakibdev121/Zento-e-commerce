@@ -358,6 +358,11 @@ document.addEventListener("DOMContentLoaded", () => {
   logoutBtn?.addEventListener("click", () => {
     localStorage.removeItem("zento_token");
     localStorage.removeItem("zento_user");
+    localStorage.removeItem("novacart_cart");
+
+    if (typeof window.zentoReloadUserCart === "function") {
+      window.zentoReloadUserCart();
+    }
 
     location.reload();
   });

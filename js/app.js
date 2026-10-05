@@ -46,13 +46,44 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let cart = [];
 
-  try {
-    cart = JSON.parse(
-      localStorage.getItem("novacart_cart")
-    ) || [];
-  } catch {
-    cart = [];
+  function getCartStorageKey() {
+    try {
+      const user = JSON.parse(localStorage.getItem("zento_user") || "null");
+      if (user && user.id) {
+        return `zento_cart_user_${user.id}`;
+      }
+    } catch {}
+    return "novacart_cart";
   }
+
+  function loadUserCart() {
+    try {
+      const key = getCartStorageKey();
+      cart = JSON.parse(localStorage.getItem(key) || "[]") || [];
+
+      // Migrate old guest cart only when a user logs in for the first time.
+      if (key !== "novacart_cart" && cart.length === 0) {
+        const oldCart = JSON.parse(localStorage.getItem("novacart_cart") || "[]") || [];
+        if (oldCart.length > 0) {
+          cart = oldCart;
+          localStorage.setItem(key, JSON.stringify(cart));
+          localStorage.removeItem("novacart_cart");
+        }
+      }
+    } catch {
+      cart = [];
+    }
+  }
+
+  loadUserCart();
+
+  window.zentoReloadUserCart = function () {
+    loadUserCart();
+    updateCartUI();
+    if (typeof renderCartPage === "function") {
+      renderCartPage();
+    }
+  };
 
   function updateCartUI() {
     const totalItems = cart.reduce(
@@ -70,7 +101,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     localStorage.setItem(
-      "novacart_cart",
+      getCartStorageKey(),
       JSON.stringify(cart)
     );
   }
@@ -1358,6 +1389,8 @@ document.addEventListener(
             "zento_user",
             JSON.stringify(data.user)
           );
+
+          window.zentoReloadUserCart?.();
 
           if (loginMessage) {
             loginMessage.textContent =
