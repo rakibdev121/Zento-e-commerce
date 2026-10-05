@@ -474,3 +474,185 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
+
+
+/* =========================================
+   ZENTO PRODUCT DETAILS
+========================================= */
+
+const productModal = document.getElementById("productModal");
+const closeProductModal = document.getElementById("closeProductModal");
+const modalProductImage = document.getElementById("modalProductImage");
+const modalProductCategory = document.getElementById("modalProductCategory");
+const modalProductName = document.getElementById("modalProductName");
+const modalProductRating = document.getElementById("modalProductRating");
+const modalProductPrice = document.getElementById("modalProductPrice");
+const modalProductOldPrice = document.getElementById("modalProductOldPrice");
+const modalProductDescription = document.getElementById("modalProductDescription");
+const modalQty = document.getElementById("modalQty");
+const modalQtyMinus = document.getElementById("modalQtyMinus");
+const modalQtyPlus = document.getElementById("modalQtyPlus");
+const modalAddCart = document.getElementById("modalAddCart");
+
+let selectedProduct = null;
+let productQuantity = 1;
+
+const productDetails = {
+  "Wireless Headphones": {
+    category: "Electronics",
+    price: 49.99,
+    oldPrice: 69.99,
+    rating: "4.8",
+    reviews: "124",
+    icon: "🎧",
+    description:
+      "Enjoy clear sound, deep bass and comfortable wireless listening with a modern everyday design."
+  },
+
+  "Smart Watch Pro": {
+    category: "Electronics",
+    price: 59.99,
+    oldPrice: 79.99,
+    rating: "4.7",
+    reviews: "89",
+    icon: "⌚",
+    description:
+      "A stylish smart watch with a modern display, fitness features and an everyday premium look."
+  },
+
+  "Urban Backpack": {
+    category: "Fashion",
+    price: 39.99,
+    oldPrice: 49.99,
+    rating: "4.6",
+    reviews: "76",
+    icon: "🎒",
+    description:
+      "A lightweight urban backpack designed for daily travel, work and comfortable everyday carry."
+  },
+
+  "Glow Skin Set": {
+    category: "Beauty",
+    price: 29.99,
+    oldPrice: 45.99,
+    rating: "4.9",
+    reviews: "203",
+    icon: "🧴",
+    description:
+      "A refreshing skincare set made for a simple daily routine and a clean, healthy-looking glow."
+  }
+};
+
+function openProductModal(name) {
+  const product = productDetails[name];
+
+  if (!product) return;
+
+  selectedProduct = {
+    name,
+    ...product
+  };
+
+  productQuantity = 1;
+
+  modalProductImage.textContent = product.icon;
+  modalProductCategory.textContent = product.category;
+  modalProductName.textContent = name;
+
+  modalProductRating.innerHTML =
+    `<span>★</span> ${product.rating} <small>(${product.reviews} reviews)</small>`;
+
+  modalProductPrice.textContent = `$${product.price.toFixed(2)}`;
+  modalProductOldPrice.textContent = `$${product.oldPrice.toFixed(2)}`;
+  modalProductDescription.textContent = product.description;
+  modalQty.textContent = productQuantity;
+
+  productModal.classList.add("active");
+  productModal.setAttribute("aria-hidden", "false");
+
+  document.body.style.overflow = "hidden";
+}
+
+function closeProductDetails() {
+  productModal.classList.remove("active");
+  productModal.setAttribute("aria-hidden", "true");
+
+  document.body.style.overflow = "";
+}
+
+document.querySelectorAll(".product-card").forEach((card) => {
+
+  card.addEventListener("click", (event) => {
+
+    if (
+      event.target.closest(".add-cart") ||
+      event.target.closest(".wishlist-btn")
+    ) {
+      return;
+    }
+
+    const productName = card.dataset.name;
+
+    openProductModal(productName);
+  });
+
+});
+
+if (closeProductModal) {
+  closeProductModal.addEventListener("click", closeProductDetails);
+}
+
+document.querySelector("[data-close-product]")?.addEventListener(
+  "click",
+  closeProductDetails
+);
+
+modalQtyMinus?.addEventListener("click", () => {
+
+  if (productQuantity > 1) {
+    productQuantity--;
+    modalQty.textContent = productQuantity;
+  }
+
+});
+
+modalQtyPlus?.addEventListener("click", () => {
+
+  if (productQuantity < 99) {
+    productQuantity++;
+    modalQty.textContent = productQuantity;
+  }
+
+});
+
+modalAddCart?.addEventListener("click", () => {
+
+  if (!selectedProduct) return;
+
+  for (let i = 0; i < productQuantity; i++) {
+
+    cart.push({
+      product: selectedProduct.name,
+      price: selectedProduct.price
+    });
+
+  }
+
+  saveCart();
+  updateCartCount();
+
+  showToast(
+    `${selectedProduct.name} × ${productQuantity} added to cart`
+  );
+
+  closeProductDetails();
+
+});
+
+document.addEventListener("keydown", (event) => {
+
+  if (event.key === "Escape" && productModal?.classList.contains("active")) {
+    closeProductDetails();
+  }
+
+});
