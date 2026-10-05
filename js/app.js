@@ -46,24 +46,26 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   }
 
-  function addToCart(name, price) {
+  function addToCart(name, price, quantity = 1) {
     const existingProduct = cart.find(
       item => item.name === name
     );
 
     if (existingProduct) {
-      existingProduct.quantity += 1;
+      existingProduct.quantity += Number(quantity);
     } else {
       cart.push({
         name,
         price: Number(price),
-        quantity: 1
+        quantity: Number(quantity)
       });
     }
 
     updateCartUI();
     showToast(`${name} added to cart 🛒`);
   }
+
+  window.zentoAddToCart = addToCart;
 
   function showCart() {
     if (cart.length === 0) {
@@ -629,17 +631,11 @@ modalAddCart?.addEventListener("click", () => {
 
   if (!selectedProduct) return;
 
-  for (let i = 0; i < productQuantity; i++) {
-
-    cart.push({
-      product: selectedProduct.name,
-      price: selectedProduct.price
-    });
-
-  }
-
-  saveCart();
-  updateCartCount();
+  window.zentoAddToCart(
+    selectedProduct.name,
+    selectedProduct.price,
+    productQuantity
+  );
 
   showToast(
     `${selectedProduct.name} × ${productQuantity} added to cart`
@@ -656,3 +652,214 @@ document.addEventListener("keydown", (event) => {
   }
 
 });
+
+
+/* =========================================
+   ZENTO CART PAGE
+========================================= */
+
+const cartPage = document.getElementById("cartPage");
+const cartItemsContainer = document.getElementById("cartItems");
+const cartEmpty = document.getElementById("cartEmpty");
+const cartSummary = document.getElementById("cartSummary");
+const cartSubtotal = document.getElementById("cartSubtotal");
+const cartDelivery = document.getElementById("cartDelivery");
+const cartTotal = document.getElementById("cartTotal");
+const cartBack = document.getElementById("cartBack");
+const continueShopping = document.getElementById("continueShopping");
+const checkoutBtn = document.getElementById("checkoutBtn");
+
+const cartProductIcons = {
+  "Wireless Headphones": "🎧",
+  "Smart Watch Pro": "⌚",
+  "Urban Backpack": "🎒",
+  "Glow Skin Set": "🧴"
+};
+
+function renderCartPage() {
+
+  if (!cartItemsContainer) return;
+
+  cartItemsContainer.innerHTML = "";
+
+  if (cart.length === 0) {
+
+    cartEmpty?.classList.add("active");
+    cartSummary?.classList.add("hidden");
+
+    cartSubtotal.textContent = "$0.00";
+    cartDelivery.textContent = "$0.00";
+    cartTotal.textContent = "$0.00";
+
+    return;
+  }
+
+  cartEmpty?.classList.remove("active");
+  cartSummary?.classList.remove("hidden");
+
+  let subtotal = 0;
+
+  cart.forEach((item, index) => {
+
+    const quantity = Number(item.quantity) || 0;
+    const price = Number(item.price) || 0;
+
+    subtotal += price * quantity;
+
+    const itemElement = document.createElement("article");
+
+    itemElement.className = "cart-item";
+
+    itemElement.innerHTML = `
+      <div class="cart-item-image">
+        ${cartProductIcons[item.name] || "🛍️"}
+      </div>
+
+      <div class="cart-item-info">
+
+        <h3>${item.name}</h3>
+
+        <strong>$${price.toFixed(2)}</strong>
+
+        <small>
+          $${(price * quantity).toFixed(2)} total
+        </small>
+
+        <div class="cart-item-actions">
+
+          <button
+            class="cart-qty-btn"
+            data-cart-action="minus"
+            data-index="${index}"
+          >
+            −
+          </button>
+
+          <span class="cart-qty">
+            ${quantity}
+          </span>
+
+          <button
+            class="cart-qty-btn"
+            data-cart-action="plus"
+            data-index="${index}"
+          >
+            +
+          </button>
+
+          <button
+            class="cart-remove"
+            data-cart-action="remove"
+            data-index="${index}"
+            aria-label="Remove ${item.name}"
+          >
+            🗑
+          </button>
+
+        </div>
+
+      </div>
+    `;
+
+    cartItemsContainer.appendChild(itemElement);
+
+  });
+
+  const delivery = subtotal >= 100 ? 0 : 5;
+
+  const total = subtotal + delivery;
+
+  cartSubtotal.textContent = `$${subtotal.toFixed(2)}`;
+  cartDelivery.textContent =
+    delivery === 0 ? "FREE" : `$${delivery.toFixed(2)}`;
+
+  cartTotal.textContent = `$${total.toFixed(2)}`;
+
+}
+
+function openCartPage() {
+
+  renderCartPage();
+
+  cartPage?.classList.add("active");
+  cartPage?.setAttribute("aria-hidden", "false");
+
+  document.body.style.overflow = "hidden";
+
+}
+
+function closeCartPage() {
+
+  cartPage?.classList.remove("active");
+  cartPage?.setAttribute("aria-hidden", "true");
+
+  document.body.style.overflow = "";
+
+}
+
+document.addEventListener("click", event => {
+
+  const actionButton = event.target.closest("[data-cart-action]");
+
+  if (!actionButton) return;
+
+  const index = Number(actionButton.dataset.index);
+  const action = actionButton.dataset.cartAction;
+
+  if (!cart[index]) return;
+
+  if (action === "plus") {
+    cart[index].quantity += 1;
+  }
+
+  if (action === "minus") {
+
+    cart[index].quantity -= 1;
+
+    if (cart[index].quantity <= 0) {
+      cart.splice(index, 1);
+    }
+
+  }
+
+  if (action === "remove") {
+    cart.splice(index, 1);
+  }
+
+  updateCartUI();
+  renderCartPage();
+
+});
+
+cartNav?.addEventListener("click", event => {
+
+  event.preventDefault();
+
+  openCartPage();
+
+});
+
+headerCart?.addEventListener("click", event => {
+
+  event.preventDefault();
+
+  openCartPage();
+
+});
+
+cartBack?.addEventListener("click", closeCartPage);
+
+continueShopping?.addEventListener("click", closeCartPage);
+
+checkoutBtn?.addEventListener("click", () => {
+
+  if (cart.length === 0) {
+    showToast("Your cart is empty 🛒");
+    return;
+  }
+
+  showToast("Checkout is coming next 🚀");
+
+});
+
+renderCartPage();
