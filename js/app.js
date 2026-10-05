@@ -92,7 +92,9 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ---------- ADD TO CART ---------- */
 
   document.querySelectorAll(".add-cart").forEach(button => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+
       const name = button.dataset.product;
       const price = button.dataset.price;
 
@@ -136,7 +138,9 @@ document.addEventListener("DOMContentLoaded", () => {
       button.textContent = "♥";
     }
 
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+
       if (!product) return;
 
       button.classList.toggle("liked");
