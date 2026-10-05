@@ -1,20 +1,43 @@
 import os
 import psycopg2
 from flask_cors import CORS
-from flask import Flask
+from flask import Flask, send_from_directory, redirect
 from dotenv import load_dotenv
 
 load_dotenv()
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 app = Flask(__name__)
 CORS(app)
 
 @app.route("/")
 def home():
-    return {
-        "status": "success",
-        "message": "Zento E-commerce Backend is running"
-    }
+    return send_from_directory(BASE_DIR, "index.html")
+
+@app.route("/admin")
+def admin_redirect():
+    return redirect("/admin/")
+
+@app.route("/admin/")
+def admin_home():
+    return send_from_directory(os.path.join(BASE_DIR, "admin"), "index.html")
+
+@app.route("/admin/<path:filename>")
+def admin_files(filename):
+    return send_from_directory(os.path.join(BASE_DIR, "admin"), filename)
+
+@app.route("/<path:filename>")
+def frontend_files(filename):
+    if filename.startswith("api/"):
+        return {"status": "error", "message": "Not found"}, 404
+
+    file_path = os.path.join(BASE_DIR, filename)
+
+    if os.path.isfile(file_path):
+        return send_from_directory(BASE_DIR, filename)
+
+    return send_from_directory(BASE_DIR, "index.html")
 
 @app.route("/api/db-test")
 def db_test():
