@@ -284,53 +284,141 @@ def delete_product(product_id):
         return {"status": "error", "message": str(e)}, 500
 
 
+
+# =========================================================
+# ZENTO_EMAIL_OTP_V1
+# Signup email verification with Resend
+# =========================================================
+
+import jwt
+import secrets
+import hashlib
+import json
+import urllib.request
+import urllib.error
+from datetime import datetime, timedelta, timezone
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask import request
+
+JWT_SECRET = os.environ.get("JWT_SECRET", "change-this-secret-in-render")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+
+
+def ensure_auth_tables():
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id BIGSERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+
+    # Existing users remain verified so their current accounts keep working.
+    cursor.execute("""
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS signup_otps (
+            id BIGSERIAL PRIMARY KEY,
+            email TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            otp_hash TEXT NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_sent_at TIMESTAMPTZ DEFAULT NOW(),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+def hash_signup_otp(otp):
+    return hashlib.sha256(otp.encode("utf-8")).hexdigest()
+
+
+def send_signup_otp(email, otp):
+    if not RESEND_API_KEY:
+        raise RuntimeError("RESEND_API_KEY is not configured")
+
+    payload = {
+        "from": RESEND_FROM_EMAIL,
+        "to": [email],
+        "subject": "Your Zento verification code",
+        "html": f"""
+        <div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;padding:30px">
+          <h2 style="margin-bottom:8px">Verify your Zento account</h2>
+          <p>Use the following 6-digit verification code:</p>
+          <div style="font-size:32px;font-weight:700;letter-spacing:8px;
+                      padding:18px 20px;background:#f4f4f5;border-radius:12px;
+                      text-align:center;margin:24px 0">
+            {otp}
+          </div>
+          <p>This code expires in <strong>10 minutes</strong>.</p>
+          <p style="color:#666;font-size:13px">
+            If you did not request this code, you can safely ignore this email.
+          </p>
+        </div>
+        """
+    }
+
+    body = json.dumps(payload).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            if response.status < 200 or response.status >= 300:
+                raise RuntimeError("Resend email request failed")
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Resend error: {detail}")
+
+
 @app.route("/api/setup-users")
 def setup_users():
     try:
-        conn = psycopg2.connect(os.environ["DATABASE_URL"])
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id BIGSERIAL PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'user',
-                created_at TIMESTAMPTZ DEFAULT NOW()
-            )
-        """)
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-
+        ensure_auth_tables()
         return {
             "status": "success",
-            "message": "Users table created successfully"
+            "message": "Users and signup OTP tables are ready"
         }
-
     except Exception as e:
         return {
             "status": "error",
             "message": str(e)
         }, 500
 
-import jwt
-from datetime import datetime, timedelta, timezone
-from werkzeug.security import generate_password_hash, check_password_hash
-from flask import request
-
-JWT_SECRET = os.environ.get("JWT_SECRET", "change-this-secret-in-render")
 
 @app.route("/api/signup", methods=["POST"])
 def signup():
     try:
         data = request.get_json() or {}
 
-        name = data.get("name")
-        email = data.get("email")
-        password = data.get("password")
+        name = (data.get("name") or "").strip()
+        email = (data.get("email") or "").strip().lower()
+        password = data.get("password") or ""
 
         if not name or not email or not password:
             return {
@@ -344,29 +432,198 @@ def signup():
                 "message": "Password must be at least 8 characters"
             }, 400
 
+        ensure_auth_tables()
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT id FROM users WHERE email = %s",
+            (email,)
+        )
+        existing_user = cursor.fetchone()
+
+        if existing_user:
+            cursor.close()
+            conn.close()
+            return {
+                "status": "error",
+                "message": "Email already exists"
+            }, 409
+
+        otp = str(secrets.randbelow(900000) + 100000)
+        otp_hash = hash_signup_otp(otp)
         password_hash = generate_password_hash(password)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+        cursor.execute(
+            "DELETE FROM signup_otps WHERE email = %s",
+            (email,)
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO signup_otps
+            (email, name, password_hash, otp_hash, expires_at, attempts, last_sent_at)
+            VALUES (%s, %s, %s, %s, %s, 0, NOW())
+            """,
+            (email, name, password_hash, otp_hash, expires_at)
+        )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        try:
+            send_signup_otp(email, otp)
+        except Exception as email_error:
+            conn = psycopg2.connect(os.environ["DATABASE_URL"])
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM signup_otps WHERE email = %s",
+                (email,)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            return {
+                "status": "error",
+                "message": "Unable to send verification email. Please try again."
+            }, 502
+
+        masked = email
+        if "@" in email:
+            local, domain = email.split("@", 1)
+            if len(local) > 2:
+                masked = local[0] + ("*" * (len(local) - 2)) + local[-1] + "@" + domain
+            else:
+                masked = "*" * len(local) + "@" + domain
+
+        return {
+            "status": "success",
+            "verification_required": True,
+            "message": "Verification code sent to your email",
+            "email": masked
+        }, 200
+
+    except psycopg2.errors.UniqueViolation:
+        return {
+            "status": "error",
+            "message": "Email already exists"
+        }, 409
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
+
+
+@app.route("/api/verify-signup", methods=["POST"])
+def verify_signup():
+    try:
+        data = request.get_json() or {}
+
+        email = (data.get("email") or "").strip().lower()
+        otp = (data.get("otp") or "").strip()
+
+        if not email or not otp:
+            return {
+                "status": "error",
+                "message": "Email and verification code are required"
+            }, 400
+
+        if not otp.isdigit() or len(otp) != 6:
+            return {
+                "status": "error",
+                "message": "Enter the 6-digit verification code"
+            }, 400
+
+        ensure_auth_tables()
 
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cursor = conn.cursor()
 
         cursor.execute(
             """
-            INSERT INTO users (name, email, password_hash)
-            VALUES (%s, %s, %s)
+            SELECT id, name, password_hash, otp_hash, expires_at, attempts
+            FROM signup_otps
+            WHERE email = %s
+            """,
+            (email,)
+        )
+
+        pending = cursor.fetchone()
+
+        if not pending:
+            cursor.close()
+            conn.close()
+            return {
+                "status": "error",
+                "message": "Verification code not found. Please sign up again."
+            }, 404
+
+        otp_id, name, password_hash, saved_hash, expires_at, attempts = pending
+
+        if attempts >= 5:
+            cursor.close()
+            conn.close()
+            return {
+                "status": "error",
+                "message": "Too many incorrect attempts. Please request a new code."
+            }, 429
+
+        if datetime.now(timezone.utc) > expires_at:
+            cursor.close()
+            conn.close()
+            return {
+                "status": "error",
+                "message": "Verification code expired. Please request a new code."
+            }, 410
+
+        if not secrets.compare_digest(hash_signup_otp(otp), saved_hash):
+            cursor.execute(
+                """
+                UPDATE signup_otps
+                SET attempts = attempts + 1
+                WHERE id = %s
+                """,
+                (otp_id,)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            return {
+                "status": "error",
+                "message": "Invalid verification code"
+            }, 400
+
+        cursor.execute(
+            """
+            INSERT INTO users
+            (name, email, password_hash, email_verified)
+            VALUES (%s, %s, %s, TRUE)
             RETURNING id, name, email, role
             """,
-            (name, email.lower().strip(), password_hash)
+            (name, email, password_hash)
         )
 
         user = cursor.fetchone()
-        conn.commit()
 
+        cursor.execute(
+            "DELETE FROM signup_otps WHERE email = %s",
+            (email,)
+        )
+
+        conn.commit()
         cursor.close()
         conn.close()
 
         return {
             "status": "success",
-            "message": "Account created successfully",
+            "message": "Email verified and account created successfully",
             "user": {
                 "id": user[0],
                 "name": user[1],
@@ -380,6 +637,100 @@ def signup():
             "status": "error",
             "message": "Email already exists"
         }, 409
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
+
+
+@app.route("/api/resend-signup-otp", methods=["POST"])
+def resend_signup_otp():
+    try:
+        data = request.get_json() or {}
+        email = (data.get("email") or "").strip().lower()
+
+        if not email:
+            return {
+                "status": "error",
+                "message": "Email is required"
+            }, 400
+
+        ensure_auth_tables()
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT id, name, password_hash, last_sent_at
+            FROM signup_otps
+            WHERE email = %s
+            """,
+            (email,)
+        )
+
+        pending = cursor.fetchone()
+
+        if not pending:
+            cursor.close()
+            conn.close()
+            return {
+                "status": "error",
+                "message": "Signup verification session not found"
+            }, 404
+
+        last_sent_at = pending[3]
+        now = datetime.now(timezone.utc)
+
+        if last_sent_at.tzinfo is None:
+            last_sent_at = last_sent_at.replace(tzinfo=timezone.utc)
+
+        elapsed = (now - last_sent_at).total_seconds()
+
+        if elapsed < 60:
+            wait_seconds = max(1, int(60 - elapsed))
+            cursor.close()
+            conn.close()
+            return {
+                "status": "error",
+                "message": f"Please wait {wait_seconds} seconds before requesting another code.",
+                "retry_after": wait_seconds
+            }, 429
+
+        otp = str(secrets.randbelow(900000) + 100000)
+        otp_hash = hash_signup_otp(otp)
+        expires_at = now + timedelta(minutes=10)
+
+        cursor.execute(
+            """
+            UPDATE signup_otps
+            SET otp_hash = %s,
+                expires_at = %s,
+                attempts = 0,
+                last_sent_at = NOW()
+            WHERE email = %s
+            """,
+            (otp_hash, expires_at, email)
+        )
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        try:
+            send_signup_otp(email, otp)
+        except Exception:
+            return {
+                "status": "error",
+                "message": "Unable to send verification email. Please try again."
+            }, 502
+
+        return {
+            "status": "success",
+            "message": "A new verification code has been sent"
+        }, 200
 
     except Exception as e:
         return {
@@ -402,12 +753,14 @@ def login():
                 "message": "Email and password are required"
             }, 400
 
+        ensure_auth_tables()
+
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cursor = conn.cursor()
 
         cursor.execute(
             """
-            SELECT id, name, email, password_hash, role
+            SELECT id, name, email, password_hash, role, email_verified
             FROM users
             WHERE email = %s
             """,
@@ -425,6 +778,12 @@ def login():
                 "message": "Invalid email or password"
             }, 401
 
+        if not user[5]:
+            return {
+                "status": "error",
+                "message": "Please verify your email before logging in."
+            }, 403
+
         payload = {
             "user_id": user[0],
             "email": user[2],
@@ -432,7 +791,11 @@ def login():
             "exp": datetime.now(timezone.utc) + timedelta(days=7)
         }
 
-        token = jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+        token = jwt.encode(
+            payload,
+            JWT_SECRET,
+            algorithm="HS256"
+        )
 
         return {
             "status": "success",
@@ -451,6 +814,7 @@ def login():
             "status": "error",
             "message": str(e)
         }, 500
+
 
 @app.route("/api/create-admin", methods=["POST"])
 def create_admin():

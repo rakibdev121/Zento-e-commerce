@@ -1225,7 +1225,394 @@ document.addEventListener(
       showLoginScreen();
     }
 
-    /* ---------- SIGNUP ---------- */
+    /* ---------- SIGNUP + EMAIL OTP ---------- */
+
+    let pendingVerificationEmail = "";
+    let otpResendTimer = null;
+
+    function showOtpVerification(email, maskedEmail) {
+      pendingVerificationEmail = email;
+
+      const authContainer =
+        signupFormElement?.parentElement ||
+        document.getElementById("authScreen");
+
+      if (!authContainer) return;
+
+      let otpBox = document.getElementById("zentoOtpVerification");
+
+      if (!otpBox) {
+        otpBox = document.createElement("div");
+        otpBox.id = "zentoOtpVerification";
+
+        otpBox.style.cssText = `
+          width:100%;
+          max-width:460px;
+          margin:0 auto;
+          padding:28px;
+          box-sizing:border-box;
+          border-radius:18px;
+          background:rgba(255,255,255,.06);
+          border:1px solid rgba(255,255,255,.12);
+          text-align:center;
+        `;
+
+        otpBox.innerHTML = `
+          <div style="font-size:30px;margin-bottom:10px">✉️</div>
+
+          <h2 style="margin:0 0 10px">Verify your email</h2>
+
+          <p style="margin:0 0 20px;opacity:.75;line-height:1.5">
+            We sent a 6-digit verification code to
+            <strong id="zentoOtpEmail"></strong>
+          </p>
+
+          <input
+            id="zentoOtpInput"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            maxlength="6"
+            placeholder="000000"
+            style="
+              width:100%;
+              box-sizing:border-box;
+              text-align:center;
+              font-size:28px;
+              letter-spacing:10px;
+              padding:14px;
+              border-radius:12px;
+              border:1px solid rgba(255,255,255,.2);
+              background:rgba(255,255,255,.08);
+              color:inherit;
+              outline:none;
+            "
+          >
+
+          <button
+            id="zentoVerifyOtpBtn"
+            type="button"
+            style="
+              width:100%;
+              margin-top:14px;
+              padding:14px;
+              border:0;
+              border-radius:12px;
+              cursor:pointer;
+              font-weight:700;
+              font-size:15px;
+            "
+          >
+            Verify Email
+          </button>
+
+          <button
+            id="zentoResendOtpBtn"
+            type="button"
+            disabled
+            style="
+              width:100%;
+              margin-top:10px;
+              padding:12px;
+              border:0;
+              background:transparent;
+              color:inherit;
+              opacity:.6;
+              cursor:not-allowed;
+            "
+          >
+            Resend code in <span id="zentoResendCountdown">60</span>s
+          </button>
+
+          <button
+            id="zentoBackToSignupBtn"
+            type="button"
+            style="
+              width:100%;
+              margin-top:4px;
+              padding:10px;
+              border:0;
+              background:transparent;
+              color:inherit;
+              cursor:pointer;
+              opacity:.75;
+            "
+          >
+            Back to signup
+          </button>
+
+          <div
+            id="zentoOtpMessage"
+            style="
+              min-height:22px;
+              margin-top:14px;
+              font-size:14px;
+            "
+          ></div>
+        `;
+
+        signupFormElement?.parentNode?.insertBefore(
+          otpBox,
+          signupFormElement
+        );
+
+        document
+          .getElementById("zentoVerifyOtpBtn")
+          ?.addEventListener("click", verifySignupOtp);
+
+        document
+          .getElementById("zentoResendOtpBtn")
+          ?.addEventListener("click", resendSignupOtp);
+
+        document
+          .getElementById("zentoBackToSignupBtn")
+          ?.addEventListener("click", () => {
+            otpBox.hidden = true;
+            if (signupFormElement) {
+              signupFormElement.hidden = false;
+            }
+            clearOtpTimer();
+          });
+
+        document
+          .getElementById("zentoOtpInput")
+          ?.addEventListener("input", event => {
+            event.target.value =
+              event.target.value.replace(/\D/g, "").slice(0, 6);
+          });
+      }
+
+      otpBox.hidden = false;
+
+      if (signupFormElement) {
+        signupFormElement.hidden = true;
+      }
+
+      const emailEl = document.getElementById("zentoOtpEmail");
+      if (emailEl) {
+        emailEl.textContent = maskedEmail || email;
+      }
+
+      const input = document.getElementById("zentoOtpInput");
+      if (input) {
+        input.value = "";
+        setTimeout(() => input.focus(), 100);
+      }
+
+      startOtpResendTimer(60);
+    }
+
+    function clearOtpTimer() {
+      if (otpResendTimer) {
+        clearInterval(otpResendTimer);
+        otpResendTimer = null;
+      }
+    }
+
+    function startOtpResendTimer(seconds) {
+      clearOtpTimer();
+
+      const button =
+        document.getElementById("zentoResendOtpBtn");
+
+      const countdown =
+        document.getElementById("zentoResendCountdown");
+
+      if (!button || !countdown) return;
+
+      button.disabled = true;
+      button.style.opacity = ".6";
+      button.style.cursor = "not-allowed";
+
+      let remaining = seconds;
+      countdown.textContent = remaining;
+
+      otpResendTimer = setInterval(() => {
+        remaining -= 1;
+        countdown.textContent = remaining;
+
+        if (remaining <= 0) {
+          clearOtpTimer();
+          button.disabled = false;
+          button.style.opacity = "1";
+          button.style.cursor = "pointer";
+          button.innerHTML = "Resend verification code";
+        } else {
+          button.innerHTML =
+            `Resend code in <span id="zentoResendCountdown">${remaining}</span>s`;
+        }
+      }, 1000);
+    }
+
+    async function verifySignupOtp() {
+      const input =
+        document.getElementById("zentoOtpInput");
+
+      const message =
+        document.getElementById("zentoOtpMessage");
+
+      const button =
+        document.getElementById("zentoVerifyOtpBtn");
+
+      const otp = input?.value.trim() || "";
+
+      if (!/^\d{6}$/.test(otp)) {
+        if (message) {
+          message.textContent =
+            "Please enter the 6-digit verification code.";
+        }
+        return;
+      }
+
+      if (message) {
+        message.textContent = "Verifying...";
+      }
+
+      if (button) {
+        button.disabled = true;
+      }
+
+      try {
+        const response = await fetch(
+          `${API_URL}/api/verify-signup`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              email: pendingVerificationEmail,
+              otp
+            })
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          if (message) {
+            message.textContent =
+              data.message || "Verification failed.";
+          }
+
+          if (button) {
+            button.disabled = false;
+          }
+
+          return;
+        }
+
+        clearOtpTimer();
+
+        const otpBox =
+          document.getElementById("zentoOtpVerification");
+
+        if (otpBox) {
+          otpBox.hidden = true;
+        }
+
+        if (signupFormElement) {
+          signupFormElement.hidden = false;
+          signupFormElement.reset();
+        }
+
+        showLoginScreen();
+
+        const loginEmail =
+          document.getElementById("loginEmail");
+
+        if (loginEmail) {
+          loginEmail.value = pendingVerificationEmail;
+        }
+
+        if (loginMessage) {
+          loginMessage.textContent =
+            "Email verified! Your account is ready. Please login.";
+        }
+
+        pendingVerificationEmail = "";
+
+      } catch {
+        if (message) {
+          message.textContent =
+            "Unable to connect to server.";
+        }
+
+        if (button) {
+          button.disabled = false;
+        }
+      }
+    }
+
+    async function resendSignupOtp() {
+      const button =
+        document.getElementById("zentoResendOtpBtn");
+
+      const message =
+        document.getElementById("zentoOtpMessage");
+
+      if (!pendingVerificationEmail) return;
+
+      if (message) {
+        message.textContent = "Sending a new code...";
+      }
+
+      if (button) {
+        button.disabled = true;
+      }
+
+      try {
+        const response = await fetch(
+          `${API_URL}/api/resend-signup-otp`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              email: pendingVerificationEmail
+            })
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          if (message) {
+            message.textContent =
+              data.message || "Unable to resend code.";
+          }
+
+          startOtpResendTimer(
+            Number(data.retry_after) || 60
+          );
+
+          return;
+        }
+
+        if (message) {
+          message.textContent =
+            "A new verification code has been sent.";
+        }
+
+        startOtpResendTimer(60);
+
+        const input =
+          document.getElementById("zentoOtpInput");
+
+        input?.focus();
+
+      } catch {
+        if (message) {
+          message.textContent =
+            "Unable to connect to server.";
+        }
+
+        if (button) {
+          button.disabled = false;
+        }
+      }
+    }
 
     signupFormElement?.addEventListener(
       "submit",
@@ -1288,6 +1675,20 @@ document.addEventListener(
             return;
           }
 
+          if (data.verification_required) {
+
+            showOtpVerification(
+              email,
+              data.email
+            );
+
+            if (signupMessage) {
+              signupMessage.textContent = "";
+            }
+
+            return;
+          }
+
           if (signupMessage) {
             signupMessage.textContent =
               "Account created successfully. Please login.";
@@ -1306,8 +1707,7 @@ document.addEventListener(
                 );
 
               if (loginEmail) {
-                loginEmail.value =
-                  email;
+                loginEmail.value = email;
               }
 
             },
