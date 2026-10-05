@@ -393,7 +393,11 @@ def send_signup_otp(email, otp):
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="ignore")
+        print(f"RESEND_HTTP_ERROR: {detail}", flush=True)
         raise RuntimeError(f"Resend error: {detail}")
+    except Exception as e:
+        print(f"RESEND_ERROR: {type(e).__name__}: {e}", flush=True)
+        raise
 
 
 @app.route("/api/setup-users")
