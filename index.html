@@ -287,75 +287,7 @@
       <!-- PRODUCTS -->
       <div class="products" id="products">
 
-
-        <!-- PRODUCT CARDS -->
-        <article class="product-card" data-category="electronics" data-name="Wireless Headphones">
-          <div class="product-top">
-            <span class="discount">-30%</span>
-            <button class="wishlist-btn" type="button" aria-label="Add to wishlist">♡</button>
-          </div>
-          <div class="product-image headphones">🎧</div>
-          <div class="product-info">
-            <span class="product-category">Electronics</span>
-            <h3>Wireless Headphones</h3>
-            <div class="rating"><span>★</span> 4.8 <small>(124)</small></div>
-            <div class="price-row">
-              <div class="price"><strong>$49.99</strong><del>$69.99</del></div>
-              <button class="add-cart" type="button" data-product="Wireless Headphones" data-price="49.99">+</button>
-            </div>
-          </div>
-        </article>
-
-        <article class="product-card" data-category="electronics" data-name="Smart Watch Pro">
-          <div class="product-top">
-            <span class="discount">-25%</span>
-            <button class="wishlist-btn" type="button" aria-label="Add to wishlist">♡</button>
-          </div>
-          <div class="product-image smartwatch">⌚</div>
-          <div class="product-info">
-            <span class="product-category">Electronics</span>
-            <h3>Smart Watch Pro</h3>
-            <div class="rating"><span>★</span> 4.7 <small>(89)</small></div>
-            <div class="price-row">
-              <div class="price"><strong>$59.99</strong><del>$79.99</del></div>
-              <button class="add-cart" type="button" data-product="Smart Watch Pro" data-price="59.99">+</button>
-            </div>
-          </div>
-        </article>
-
-        <article class="product-card" data-category="fashion" data-name="Urban Backpack">
-          <div class="product-top">
-            <span class="discount">-20%</span>
-            <button class="wishlist-btn" type="button" aria-label="Add to wishlist">♡</button>
-          </div>
-          <div class="product-image backpack">🎒</div>
-          <div class="product-info">
-            <span class="product-category">Fashion</span>
-            <h3>Urban Backpack</h3>
-            <div class="rating"><span>★</span> 4.6 <small>(76)</small></div>
-            <div class="price-row">
-              <div class="price"><strong>$39.99</strong><del>$49.99</del></div>
-              <button class="add-cart" type="button" data-product="Urban Backpack" data-price="39.99">+</button>
-            </div>
-          </div>
-        </article>
-
-        <article class="product-card" data-category="beauty" data-name="Glow Skin Set">
-          <div class="product-top">
-            <span class="discount">-35%</span>
-            <button class="wishlist-btn" type="button" aria-label="Add to wishlist">♡</button>
-          </div>
-          <div class="product-image beauty">🧴</div>
-          <div class="product-info">
-            <span class="product-category">Beauty</span>
-            <h3>Glow Skin Set</h3>
-            <div class="rating"><span>★</span> 4.9 <small>(203)</small></div>
-            <div class="price-row">
-              <div class="price"><strong>$29.99</strong><del>$45.99</del></div>
-              <button class="add-cart" type="button" data-product="Glow Skin Set" data-price="29.99">+</button>
-            </div>
-          </div>
-        </article>
+        <div id="dynamicProducts"></div>
 
       <!-- NO RESULT -->
       <div id="noResults" class="no-results" hidden>
@@ -500,6 +432,7 @@
   </div>
 
 
+  <script src="js/dynamic-products.js"></script>
   <script src="js/app.js"></script>
 
 </body>
