@@ -95,6 +95,195 @@ def setup_products():
             "message": str(e)
         }, 500
 
+
+@app.route("/api/products", methods=["GET"])
+def get_products():
+    try:
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, name, description, price, image_url, category, stock, created_at
+            FROM products
+            ORDER BY id DESC
+        """)
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        products = [
+            {
+                "id": row[0],
+                "name": row[1],
+                "description": row[2],
+                "price": float(row[3]),
+                "image_url": row[4],
+                "category": row[5],
+                "stock": row[6],
+                "created_at": str(row[7])
+            }
+            for row in rows
+        ]
+
+        return {"status": "success", "products": products}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
+@app.route("/api/products", methods=["POST"])
+def create_product():
+    try:
+        data = request.get_json() or {}
+
+        name = data.get("name")
+        description = data.get("description")
+        price = data.get("price")
+        image_url = data.get("image_url")
+        category = data.get("category")
+        stock = data.get("stock", 0)
+
+        if not name or price is None:
+            return {
+                "status": "error",
+                "message": "Name and price are required"
+            }, 400
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO products
+            (name, description, price, image_url, category, stock)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id, name, description, price, image_url, category, stock, created_at
+        """, (name, description, price, image_url, category, stock))
+
+        row = cursor.fetchone()
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": "Product created successfully",
+            "product": {
+                "id": row[0],
+                "name": row[1],
+                "description": row[2],
+                "price": float(row[3]),
+                "image_url": row[4],
+                "category": row[5],
+                "stock": row[6],
+                "created_at": str(row[7])
+            }
+        }, 201
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
+@app.route("/api/products/<int:product_id>", methods=["PUT"])
+def update_product(product_id):
+    try:
+        data = request.get_json() or {}
+
+        name = data.get("name")
+        description = data.get("description")
+        price = data.get("price")
+        image_url = data.get("image_url")
+        category = data.get("category")
+        stock = data.get("stock", 0)
+
+        if not name or price is None:
+            return {
+                "status": "error",
+                "message": "Name and price are required"
+            }, 400
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE products
+            SET name = %s,
+                description = %s,
+                price = %s,
+                image_url = %s,
+                category = %s,
+                stock = %s
+            WHERE id = %s
+            RETURNING id, name, description, price, image_url, category, stock, created_at
+        """, (name, description, price, image_url, category, stock, product_id))
+
+        row = cursor.fetchone()
+
+        if not row:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return {
+                "status": "error",
+                "message": "Product not found"
+            }, 404
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": "Product updated successfully",
+            "product": {
+                "id": row[0],
+                "name": row[1],
+                "description": row[2],
+                "price": float(row[3]),
+                "image_url": row[4],
+                "category": row[5],
+                "stock": row[6],
+                "created_at": str(row[7])
+            }
+        }
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
+@app.route("/api/products/<int:product_id>", methods=["DELETE"])
+def delete_product(product_id):
+    try:
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "DELETE FROM products WHERE id = %s RETURNING id",
+            (product_id,)
+        )
+
+        deleted = cursor.fetchone()
+
+        if not deleted:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return {
+                "status": "error",
+                "message": "Product not found"
+            }, 404
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": "Product deleted successfully"
+        }
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
 @app.route("/api/setup-users")
 def setup_users():
     try:
