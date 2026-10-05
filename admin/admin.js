@@ -248,16 +248,27 @@ async function saveProduct(event) {
 
   const id = productId.value.trim();
 
-  const product = {
-    name: productName.value.trim(),
-    description: productDescription.value.trim(),
-    price: Number(productPrice.value),
-    image_url: productImage.value.trim(),
-    category: productCategory.value.trim(),
-    stock: Number(productStock.value || 0)
-  };
-
   try {
+    let imageUrl = productImage.value.trim();
+
+    const file = productImageFile?.files?.[0];
+
+    if (file) {
+      productFormMessage.textContent = "Uploading image...";
+      imageUrl = await uploadProductImage(file);
+    }
+
+    const product = {
+      name: productName.value.trim(),
+      description: productDescription.value.trim(),
+      price: Number(productPrice.value),
+      image_url: imageUrl,
+      category: productCategory.value.trim(),
+      stock: Number(productStock.value || 0)
+    };
+
+    productFormMessage.textContent = "Saving product...";
+
     const url = id
       ? `/api/products/${id}`
       : "/api/products";
@@ -278,11 +289,11 @@ async function saveProduct(event) {
       throw new Error(data.message || "Failed to save product");
     }
 
-    productFormMessage.textContent = "Product saved successfully.";
     closeProductForm();
     await loadProducts();
 
   } catch (error) {
+    console.error("Save product error:", error);
     productFormMessage.textContent = error.message;
   }
 }
@@ -332,3 +343,47 @@ navItems.forEach((item) => {
   });
 });
 
+
+async function uploadProductImage(file) {
+  if (!file) return null;
+
+  const fileExt = file.name.split(".").pop().toLowerCase();
+  const fileName = `${Date.now()}-${crypto.randomUUID()}.${fileExt}`;
+  const filePath = `products/${fileName}`;
+
+  const { error } = await supabase.storage
+    .from("product-images")
+    .upload(filePath, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type
+    });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const { data } = supabase.storage
+    .from("product-images")
+    .getPublicUrl(filePath);
+
+  return data.publicUrl;
+}
+
+const productImageFile = document.getElementById("productImageFile");
+
+if (productImageFile) {
+  productImageFile.addEventListener("change", () => {
+    const file = productImageFile.files[0];
+    const preview = document.getElementById("productImagePreview");
+
+    if (!file) {
+      preview.style.display = "none";
+      preview.removeAttribute("src");
+      return;
+    }
+
+    preview.src = URL.createObjectURL(file);
+    preview.style.display = "block";
+  });
+}

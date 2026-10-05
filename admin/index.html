@@ -144,7 +144,12 @@
 
             <label>
               Image URL
-              <input id="productImage" type="url">
+              <input id="productImage" type="url" placeholder="Image URL (optional)">
+              <div class="image-upload-box">
+                <input id="productImageFile" type="file" accept="image/*">
+                <small>অথবা সরাসরি image URL দিন</small>
+                <img id="productImagePreview" class="product-image-preview" alt="Image preview">
+              </div>
             </label>
 
             <label>

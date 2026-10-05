@@ -481,3 +481,31 @@ nav {
   color: #991b1b;
 }
 
+
+.image-upload-box {
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.image-upload-box input[type="file"] {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.image-upload-box small {
+  display: block;
+  color: #64748b;
+}
+
+.product-image-preview {
+  display: none;
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  margin-top: 12px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
