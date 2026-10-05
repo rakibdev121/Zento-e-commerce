@@ -1431,3 +1431,38 @@ body.auth-active {
   min-width: 0;
 }
 
+
+
+/* =========================
+   DYNAMIC SHOP PRODUCTS
+========================= */
+
+.no-products-message {
+  grid-column: 1 / -1;
+  padding: 35px 20px;
+  text-align: center;
+  color: var(--muted);
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  font-size: 12px;
+}
+
+#dynamicProducts .add-cart:disabled {
+  background: #cbd0da;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+#dynamicProducts .product-image {
+  background: #f4f6fb;
+}
+
+#dynamicProducts .product-image img {
+  object-fit: contain;
+  padding: 8px;
+}
+
+#dynamicProducts .product-card {
+  cursor: pointer;
+}

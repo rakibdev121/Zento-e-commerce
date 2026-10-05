@@ -8,7 +8,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const searchInput = document.getElementById("searchInput");
   const clearSearch = document.getElementById("clearSearch");
-  const products = [...document.querySelectorAll(".product-card")];
+  let products = [...document.querySelectorAll(".product-card")];
   const categories = [...document.querySelectorAll(".category")];
   const noResults = document.getElementById("noResults");
 
@@ -103,26 +103,32 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ---------- CARD ADD TO CART ---------- */
 
-  document.querySelectorAll(".add-cart").forEach(button => {
+  document.addEventListener("click", event => {
 
-    button.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
+    const button = event.target.closest(".add-cart");
 
-      const name = button.dataset.product;
-      const price = button.dataset.price;
+    if (!button) return;
 
-      addToCart(name, price);
+    event.preventDefault();
+    event.stopPropagation();
 
-      const originalText = button.textContent;
+    if (button.disabled) {
+      showToast("Product is out of stock");
+      return;
+    }
 
-      button.textContent = "✓";
+    const name = button.dataset.product;
+    const price = button.dataset.price;
 
-      setTimeout(() => {
-        button.textContent = originalText || "+";
-      }, 800);
-    });
+    addToCart(name, price);
 
+    const originalText = button.textContent;
+
+    button.textContent = "✓";
+
+    setTimeout(() => {
+      button.textContent = originalText || "+";
+    }, 800);
   });
 
   /* =========================================
@@ -139,54 +145,64 @@ document.addEventListener("DOMContentLoaded", () => {
     wishlist = [];
   }
 
-  document.querySelectorAll(".wishlist-btn").forEach(button => {
+  function syncWishlistButtons() {
+    document.querySelectorAll(".wishlist-btn").forEach(button => {
+
+      const card = button.closest(".product-card");
+      const productName = card?.dataset.name;
+
+      if (
+        productName &&
+        wishlist.includes(productName)
+      ) {
+        button.classList.add("liked");
+        button.textContent = "♥";
+      } else {
+        button.classList.remove("liked");
+        button.textContent = "♡";
+      }
+    });
+  }
+
+  document.addEventListener("click", event => {
+
+    const button = event.target.closest(".wishlist-btn");
+
+    if (!button) return;
+
+    event.preventDefault();
+    event.stopPropagation();
 
     const card = button.closest(".product-card");
     const productName = card?.dataset.name;
 
-    if (
-      productName &&
-      wishlist.includes(productName)
-    ) {
+    if (!productName) return;
+
+    if (wishlist.includes(productName)) {
+
+      wishlist = wishlist.filter(
+        item => item !== productName
+      );
+
+      button.classList.remove("liked");
+      button.textContent = "♡";
+
+      showToast("Removed from wishlist");
+
+    } else {
+
+      wishlist.push(productName);
+
       button.classList.add("liked");
       button.textContent = "♥";
+
+      showToast("Added to wishlist ❤️");
     }
 
-    button.addEventListener("click", event => {
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (!productName) return;
-
-      if (button.classList.contains("liked")) {
-
-        button.classList.remove("liked");
-        button.textContent = "♡";
-
-        wishlist = wishlist.filter(
-          item => item !== productName
-        );
-
-        showToast("Removed from wishlist");
-
-      } else {
-
-        button.classList.add("liked");
-        button.textContent = "♥";
-
-        if (!wishlist.includes(productName)) {
-          wishlist.push(productName);
-        }
-
-        showToast("Added to wishlist ❤️");
-      }
-
-      localStorage.setItem(
-        "zento_wishlist",
-        JSON.stringify(wishlist)
-      );
-    });
-
+    localStorage.setItem(
+      "zento_wishlist",
+      JSON.stringify(wishlist)
+    );
   });
 
   /* =========================================
@@ -283,9 +299,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
   };
 
-  function openProductModal(name) {
+  function openProductModal(name, card = null) {
 
-    const product = productDetails[name];
+    let product = productDetails[name];
+
+    if (!product && card) {
+      product = {
+        category: card.dataset.category || "General",
+        price: Number(card.dataset.price) || 0,
+        oldPrice: null,
+        rating: "New",
+        reviews: "0",
+        icon: "🛍️",
+        description:
+          card.dataset.description ||
+          "Product details are available from our store.",
+        stock: Number(card.dataset.stock) || 0,
+        image: card.dataset.image || ""
+      };
+    }
 
     if (!product || !productModal) {
       console.error("Product details not found:", name);
@@ -300,7 +332,18 @@ document.addEventListener("DOMContentLoaded", () => {
     productQuantity = 1;
 
     if (modalProductImage) {
-      modalProductImage.textContent = product.icon;
+      if (product.image) {
+        modalProductImage.innerHTML = `
+          <img
+            src="${product.image.replace(/"/g, "&quot;")}"
+            alt="${name.replace(/"/g, "&quot;")}"
+            style="width:100%;height:100%;object-fit:contain;border-radius:22px;"
+            onerror="this.style.display='none';this.parentElement.textContent='🛍️';"
+          >
+        `;
+      } else {
+        modalProductImage.textContent = product.icon || "🛍️";
+      }
     }
 
     if (modalProductCategory) {
@@ -323,13 +366,38 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (modalProductOldPrice) {
-      modalProductOldPrice.textContent =
-        `$${product.oldPrice.toFixed(2)}`;
+      if (product.oldPrice !== null && product.oldPrice !== undefined) {
+        modalProductOldPrice.textContent =
+          `$${Number(product.oldPrice).toFixed(2)}`;
+        modalProductOldPrice.style.display = "";
+      } else {
+        modalProductOldPrice.textContent = "";
+        modalProductOldPrice.style.display = "none";
+      }
     }
 
     if (modalProductDescription) {
       modalProductDescription.textContent =
-        product.description;
+        product.description ||
+        "Product details are available from our store.";
+    }
+
+    const modalStock =
+      document.querySelector(".modal-stock");
+
+    if (modalStock) {
+      const stock = Number(product.stock ?? 0);
+
+      modalStock.innerHTML =
+        stock > 0
+          ? `<span>●</span> ${stock} in stock`
+          : `<span>●</span> Out of stock`;
+
+      modalStock.style.background =
+        stock > 0 ? "#ecfdf5" : "#fff1f2";
+
+      modalStock.style.color =
+        stock > 0 ? "#087f5b" : "#d11a3a";
     }
 
     if (modalQty) {
@@ -363,25 +431,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ---------- PRODUCT CARD CLICK ---------- */
 
-  products.forEach(card => {
+  document.addEventListener("click", event => {
 
-    card.addEventListener("click", event => {
+    const card = event.target.closest(".product-card");
 
-      if (
-        event.target.closest(".add-cart") ||
-        event.target.closest(".wishlist-btn")
-      ) {
-        return;
-      }
+    if (!card) return;
 
-      const name = card.dataset.name;
+    if (
+      event.target.closest(".add-cart") ||
+      event.target.closest(".wishlist-btn")
+    ) {
+      return;
+    }
 
-      if (name) {
-        openProductModal(name);
-      }
+    const name = card.dataset.name;
 
-    });
-
+    if (name) {
+      openProductModal(name, card);
+    }
   });
 
   /* ---------- CLOSE MODAL ---------- */
@@ -449,6 +516,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (!selectedProduct) return;
 
+      if (
+        selectedProduct.stock !== undefined &&
+        Number(selectedProduct.stock) <= 0
+      ) {
+        showToast("Product is out of stock");
+        return;
+      }
+
       addToCart(
         selectedProduct.name,
         selectedProduct.price,
@@ -472,6 +547,22 @@ document.addEventListener("DOMContentLoaded", () => {
         closeProductDetails();
       }
 
+    }
+  );
+
+  /* =========================================
+     DYNAMIC PRODUCT SYNC
+  ========================================= */
+
+  document.addEventListener(
+    "zentoProductsLoaded",
+    () => {
+      products = [
+        ...document.querySelectorAll(".product-card")
+      ];
+
+      syncWishlistButtons();
+      filterProducts();
     }
   );
 

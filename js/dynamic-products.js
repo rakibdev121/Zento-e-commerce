@@ -4,42 +4,63 @@
 
 async function loadZentoProducts() {
   const container = document.getElementById("dynamicProducts");
+  const noResults = document.getElementById("noResults");
 
   if (!container) return;
 
   try {
-    const response = await fetch("https://zento-e-commerce-all.onrender.com/api/products");
+    const response = await fetch(
+      "https://zento-e-commerce-all.onrender.com/api/products",
+      { cache: "no-store" }
+    );
 
     if (!response.ok) {
       throw new Error("Failed to load products");
     }
 
     const data = await response.json();
+
     const products = Array.isArray(data.products)
       ? data.products
       : [];
 
     if (!products.length) {
-      container.innerHTML = `
-        <div class="no-products-message">
-          No products available yet.
-        </div>
-      `;
+      container.innerHTML = "";
+      if (noResults) noResults.hidden = false;
       return;
     }
 
+    if (noResults) noResults.hidden = true;
+
     container.innerHTML = products.map(product => {
-      const name = String(product.name || "");
-      const description = String(product.description || "");
-      const category = String(product.category || "General");
+      const id = String(product.id ?? "");
+      const name = String(product.name ?? "");
+      const description = String(product.description ?? "");
+      const category = String(product.category ?? "General");
       const price = Number(product.price) || 0;
-      const image = String(product.image_url || "");
+      const stock = Number(product.stock) || 0;
+      const image = String(product.image_url ?? "");
+
+      const safeName = escapeZentoHtml(name);
+      const safeDescription = escapeZentoHtml(description);
+      const safeCategory = escapeZentoHtml(category);
+      const safeImage = escapeZentoHtml(image);
+
+      const stockText =
+        stock > 0
+          ? `${stock} in stock`
+          : "Out of stock";
 
       return `
         <article
           class="product-card"
-          data-name="${escapeZentoHtml(name)}"
+          data-id="${escapeZentoHtml(id)}"
+          data-name="${safeName}"
           data-category="${escapeZentoHtml(category.toLowerCase())}"
+          data-price="${price}"
+          data-description="${safeDescription}"
+          data-image="${safeImage}"
+          data-stock="${stock}"
         >
 
           <div class="product-top">
@@ -51,7 +72,7 @@ async function loadZentoProducts() {
             <button
               class="wishlist-btn"
               type="button"
-              aria-label="Add ${escapeZentoHtml(name)} to wishlist"
+              aria-label="Add ${safeName} to wishlist"
             >♡</button>
 
           </div>
@@ -60,10 +81,12 @@ async function loadZentoProducts() {
             ${
               image
                 ? `<img
-                    src="${escapeZentoHtml(image)}"
-                    alt="${escapeZentoHtml(name)}"
+                    src="${safeImage}"
+                    alt="${safeName}"
                     loading="lazy"
-                  >`
+                    onerror="this.style.display='none';this.parentElement.querySelector('.image-fallback').style.display='block';"
+                  >
+                  <span class="image-fallback" style="display:none;font-size:48px;">🛍️</span>`
                 : `<span>🛍️</span>`
             }
           </div>
@@ -71,40 +94,39 @@ async function loadZentoProducts() {
           <div class="product-info">
 
             <span class="product-category">
-              ${escapeZentoHtml(category)}
+              ${safeCategory}
             </span>
 
             <h3>
-              ${escapeZentoHtml(name)}
+              ${safeName}
             </h3>
 
             <div class="rating">
               <span>★</span>
-              New Product
+              <span>${escapeZentoHtml(stockText)}</span>
             </div>
 
             <div class="price-row">
 
-              <strong>
-                ৳${price.toFixed(2)}
-              </strong>
+              <div class="price">
+                <strong>
+                  ৳${price.toFixed(2)}
+                </strong>
+              </div>
 
               <button
                 class="add-cart"
                 type="button"
-                data-product="${escapeZentoHtml(name)}"
+                data-product="${safeName}"
                 data-price="${price}"
-              >+</button>
+                data-id="${escapeZentoHtml(id)}"
+                ${stock <= 0 ? "disabled" : ""}
+                aria-label="Add ${safeName} to cart"
+              >${stock > 0 ? "+" : "×"}</button>
 
             </div>
 
           </div>
-
-          <div
-            class="dynamic-product-data"
-            data-description="${escapeZentoHtml(description)}"
-            hidden
-          ></div>
 
         </article>
       `;
@@ -128,6 +150,10 @@ async function loadZentoProducts() {
         Unable to load products.
       </div>
     `;
+
+    if (noResults) {
+      noResults.hidden = true;
+    }
   }
 }
 
