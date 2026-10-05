@@ -116,11 +116,54 @@
             <h2>Products</h2>
             <p>Manage your Zento products</p>
           </div>
-          <button class="primary-btn">+ Add Product</button>
+          <button id="addProductBtn" class="primary-btn">+ Add Product</button>
         </div>
 
         <div id="productsList" class="empty-state">
-          No products loaded yet.
+          Loading products...
+        </div>
+
+        <div id="productFormWrap" class="product-form-wrap" style="display:none;">
+          <form id="productForm" class="settings-form">
+            <input type="hidden" id="productId">
+
+            <label>
+              Product Name
+              <input id="productName" type="text" required>
+            </label>
+
+            <label>
+              Description
+              <textarea id="productDescription" rows="4"></textarea>
+            </label>
+
+            <label>
+              Price
+              <input id="productPrice" type="number" step="0.01" min="0" required>
+            </label>
+
+            <label>
+              Image URL
+              <input id="productImage" type="url">
+            </label>
+
+            <label>
+              Category
+              <input id="productCategory" type="text">
+            </label>
+
+            <label>
+              Stock
+              <input id="productStock" type="number" min="0" value="0">
+            </label>
+
+            <div>
+              <button type="submit" class="primary-btn">Save Product</button>
+              <button type="button" id="cancelProductBtn" class="primary-btn">Cancel</button>
+            </div>
+
+            <div id="productFormMessage"></div>
+          </form>
         </div>
       </div>
     </section>
