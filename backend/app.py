@@ -550,3 +550,500 @@ def delete_admin(user_id):
             "message": str(e)
         }, 500
 
+
+# =========================================================
+# ZENTO_PROFILE_CHECKOUT_V1
+# Profile + Checkout + Orders
+# =========================================================
+
+def ensure_order_tables():
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT '',
+        ADD COLUMN IF NOT EXISTS address TEXT DEFAULT '',
+        ADD COLUMN IF NOT EXISTS city TEXT DEFAULT ''
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS orders (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            customer_name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            address TEXT NOT NULL,
+            city TEXT NOT NULL,
+            subtotal NUMERIC(10,2) NOT NULL,
+            delivery_fee NUMERIC(10,2) NOT NULL DEFAULT 0,
+            total NUMERIC(10,2) NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS order_items (
+            id BIGSERIAL PRIMARY KEY,
+            order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+            product_id BIGINT,
+            product_name TEXT NOT NULL,
+            price NUMERIC(10,2) NOT NULL,
+            quantity INTEGER NOT NULL,
+            subtotal NUMERIC(10,2) NOT NULL
+        )
+    """)
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+def get_authenticated_user():
+    auth = request.headers.get("Authorization", "")
+
+    if not auth.startswith("Bearer "):
+        return None
+
+    token = auth[7:].strip()
+
+    try:
+        payload = jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=["HS256"]
+        )
+        return payload
+    except Exception:
+        return None
+
+
+@app.route("/api/setup-ecommerce", methods=["GET"])
+def setup_ecommerce():
+    try:
+        ensure_order_tables()
+        return {
+            "status": "success",
+            "message": "Profile and order tables are ready"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
+
+
+@app.route("/api/profile", methods=["GET"])
+def get_profile():
+    user = get_authenticated_user()
+
+    if not user:
+        return {
+            "status": "error",
+            "message": "Authentication required"
+        }, 401
+
+    try:
+        ensure_order_tables()
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, name, email, phone, address, city, role, created_at
+            FROM users
+            WHERE id = %s
+        """, (user["user_id"],))
+
+        row = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        if not row:
+            return {
+                "status": "error",
+                "message": "User not found"
+            }, 404
+
+        return {
+            "status": "success",
+            "user": {
+                "id": row[0],
+                "name": row[1],
+                "email": row[2],
+                "phone": row[3] or "",
+                "address": row[4] or "",
+                "city": row[5] or "",
+                "role": row[6],
+                "created_at": str(row[7])
+            }
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
+
+
+@app.route("/api/profile", methods=["PUT"])
+def update_profile():
+    user = get_authenticated_user()
+
+    if not user:
+        return {
+            "status": "error",
+            "message": "Authentication required"
+        }, 401
+
+    try:
+        data = request.get_json() or {}
+
+        name = str(data.get("name", "")).strip()
+        phone = str(data.get("phone", "")).strip()
+        address = str(data.get("address", "")).strip()
+        city = str(data.get("city", "")).strip()
+
+        if not name:
+            return {
+                "status": "error",
+                "message": "Name is required"
+            }, 400
+
+        if not phone:
+            return {
+                "status": "error",
+                "message": "Phone is required"
+            }, 400
+
+        if not address:
+            return {
+                "status": "error",
+                "message": "Address is required"
+            }, 400
+
+        ensure_order_tables()
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE users
+            SET name = %s,
+                phone = %s,
+                address = %s,
+                city = %s
+            WHERE id = %s
+            RETURNING id, name, email, phone, address, city, role, created_at
+        """, (
+            name,
+            phone,
+            address,
+            city,
+            user["user_id"]
+        ))
+
+        row = cursor.fetchone()
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": "Profile updated successfully",
+            "user": {
+                "id": row[0],
+                "name": row[1],
+                "email": row[2],
+                "phone": row[3] or "",
+                "address": row[4] or "",
+                "city": row[5] or "",
+                "role": row[6],
+                "created_at": str(row[7])
+            }
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
+
+
+@app.route("/api/orders", methods=["POST"])
+def create_order():
+    user = get_authenticated_user()
+
+    if not user:
+        return {
+            "status": "error",
+            "message": "Authentication required"
+        }, 401
+
+    try:
+        data = request.get_json() or {}
+
+        items = data.get("items") or []
+        customer_name = str(data.get("customer_name", "")).strip()
+        phone = str(data.get("phone", "")).strip()
+        address = str(data.get("address", "")).strip()
+        city = str(data.get("city", "")).strip()
+
+        if not items:
+            return {
+                "status": "error",
+                "message": "Your cart is empty"
+            }, 400
+
+        if not customer_name or not phone or not address:
+            return {
+                "status": "error",
+                "message": "Name, phone and address are required"
+            }, 400
+
+        ensure_order_tables()
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        subtotal = 0
+        clean_items = []
+
+        for item in items:
+            product_id = item.get("id")
+            name = str(item.get("name", "")).strip()
+            quantity = int(item.get("quantity", 0))
+
+            if not name or quantity < 1:
+                continue
+
+            cursor.execute("""
+                SELECT id, name, price, stock
+                FROM products
+                WHERE id = %s
+            """, (product_id,))
+
+            product = cursor.fetchone()
+
+            if not product:
+                conn.rollback()
+                cursor.close()
+                conn.close()
+                return {
+                    "status": "error",
+                    "message": f"Product not found: {name}"
+                }, 400
+
+            real_id, real_name, real_price, stock = product
+
+            if stock is not None and quantity > stock:
+                conn.rollback()
+                cursor.close()
+                conn.close()
+                return {
+                    "status": "error",
+                    "message": f"Not enough stock for {real_name}"
+                }, 400
+
+            line_total = float(real_price) * quantity
+            subtotal += line_total
+
+            clean_items.append({
+                "id": real_id,
+                "name": real_name,
+                "price": float(real_price),
+                "quantity": quantity,
+                "subtotal": line_total
+            })
+
+        if not clean_items:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return {
+                "status": "error",
+                "message": "No valid products in cart"
+            }, 400
+
+        delivery_fee = 0 if subtotal >= 100 else 5
+        total = subtotal + delivery_fee
+
+        cursor.execute("""
+            INSERT INTO orders (
+                user_id,
+                customer_name,
+                phone,
+                address,
+                city,
+                subtotal,
+                delivery_fee,
+                total,
+                status
+            )
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'pending')
+            RETURNING id, created_at
+        """, (
+            user["user_id"],
+            customer_name,
+            phone,
+            address,
+            city,
+            subtotal,
+            delivery_fee,
+            total
+        ))
+
+        order_id, created_at = cursor.fetchone()
+
+        for item in clean_items:
+            cursor.execute("""
+                INSERT INTO order_items (
+                    order_id,
+                    product_id,
+                    product_name,
+                    price,
+                    quantity,
+                    subtotal
+                )
+                VALUES (%s,%s,%s,%s,%s,%s)
+            """, (
+                order_id,
+                item["id"],
+                item["name"],
+                item["price"],
+                item["quantity"],
+                item["subtotal"]
+            ))
+
+            cursor.execute("""
+                UPDATE products
+                SET stock = GREATEST(COALESCE(stock, 0) - %s, 0)
+                WHERE id = %s
+            """, (
+                item["quantity"],
+                item["id"]
+            ))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": "Order placed successfully",
+            "order": {
+                "id": order_id,
+                "subtotal": subtotal,
+                "delivery_fee": delivery_fee,
+                "total": total,
+                "status": "pending",
+                "created_at": str(created_at)
+            }
+        }, 201
+
+    except Exception as e:
+        try:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+        except Exception:
+            pass
+
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
+
+
+@app.route("/api/orders", methods=["GET"])
+def get_orders():
+    user = get_authenticated_user()
+
+    if not user:
+        return {
+            "status": "error",
+            "message": "Authentication required"
+        }, 401
+
+    try:
+        ensure_order_tables()
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                id,
+                customer_name,
+                phone,
+                address,
+                city,
+                subtotal,
+                delivery_fee,
+                total,
+                status,
+                created_at
+            FROM orders
+            WHERE user_id = %s
+            ORDER BY id DESC
+        """, (user["user_id"],))
+
+        rows = cursor.fetchall()
+
+        orders = []
+
+        for row in rows:
+            cursor.execute("""
+                SELECT
+                    product_id,
+                    product_name,
+                    price,
+                    quantity,
+                    subtotal
+                FROM order_items
+                WHERE order_id = %s
+                ORDER BY id ASC
+            """, (row[0],))
+
+            items = [
+                {
+                    "product_id": item[0],
+                    "name": item[1],
+                    "price": float(item[2]),
+                    "quantity": item[3],
+                    "subtotal": float(item[4])
+                }
+                for item in cursor.fetchall()
+            ]
+
+            orders.append({
+                "id": row[0],
+                "customer_name": row[1],
+                "phone": row[2],
+                "address": row[3],
+                "city": row[4],
+                "subtotal": float(row[5]),
+                "delivery_fee": float(row[6]),
+                "total": float(row[7]),
+                "status": row[8],
+                "created_at": str(row[9]),
+                "items": items
+            })
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "orders": orders
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
+

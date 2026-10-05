@@ -392,6 +392,179 @@
   </section>
 
 
+  <!-- CHECKOUT PAGE -->
+  <section class="zento-page" id="checkoutPage" aria-hidden="true">
+    <div class="zento-page-header">
+      <button type="button" id="checkoutBack" class="zento-back">←</button>
+      <div>
+        <span>Secure order</span>
+        <h2>Checkout</h2>
+      </div>
+      <span class="zento-page-icon">🧾</span>
+    </div>
+
+    <div class="checkout-layout">
+      <form id="checkoutForm" class="checkout-card">
+
+        <div class="checkout-section">
+          <div class="section-title">
+            <span>01</span>
+            <div>
+              <strong>Delivery details</strong>
+              <small>Where should we deliver?</small>
+            </div>
+          </div>
+
+          <label>Full name
+            <input id="checkoutName" type="text" required placeholder="Your full name">
+          </label>
+
+          <label>Phone number
+            <input id="checkoutPhone" type="tel" required placeholder="+966 5XXXXXXXX">
+          </label>
+
+          <label>City
+            <input id="checkoutCity" type="text" placeholder="Riyadh">
+          </label>
+
+          <label>Delivery address
+            <textarea id="checkoutAddress" rows="3" required placeholder="Building, street, district..."></textarea>
+          </label>
+        </div>
+
+        <div class="checkout-section">
+          <div class="section-title">
+            <span>02</span>
+            <div>
+              <strong>Payment</strong>
+              <small>Simple & secure</small>
+            </div>
+          </div>
+
+          <div class="payment-option active">
+            <span class="payment-radio">✓</span>
+            <div>
+              <strong>Cash on Delivery</strong>
+              <small>Pay when your order arrives</small>
+            </div>
+          </div>
+        </div>
+
+        <p id="checkoutMessage" class="checkout-message"></p>
+
+        <button class="place-order-btn" type="submit">
+          Place Order
+          <span>→</span>
+        </button>
+      </form>
+
+      <aside class="checkout-summary-card">
+        <div class="summary-card-title">
+          <strong>Order summary</strong>
+          <span id="checkoutItemCount">0 items</span>
+        </div>
+
+        <div id="checkoutItems"></div>
+
+        <div class="checkout-total-row">
+          <span>Subtotal</span>
+          <strong id="checkoutSubtotal">$0.00</strong>
+        </div>
+
+        <div class="checkout-total-row">
+          <span>Delivery</span>
+          <strong id="checkoutDelivery">$0.00</strong>
+        </div>
+
+        <div class="checkout-grand-total">
+          <span>Total</span>
+          <strong id="checkoutTotal">$0.00</strong>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+
+  <!-- PROFILE PAGE -->
+  <section class="zento-page" id="profilePage" aria-hidden="true">
+    <div class="zento-page-header">
+      <button type="button" id="profileBack" class="zento-back">←</button>
+      <div>
+        <span>Your account</span>
+        <h2>My Profile</h2>
+      </div>
+      <span class="zento-page-icon">♙</span>
+    </div>
+
+    <div class="profile-layout">
+
+      <div class="profile-hero-card">
+        <div class="profile-avatar" id="profileAvatar">Z</div>
+        <div>
+          <span>Welcome back</span>
+          <h3 id="profileDisplayName">Zento User</h3>
+          <p id="profileDisplayEmail">Loading...</p>
+        </div>
+      </div>
+
+      <form id="profileForm" class="profile-card">
+        <div class="profile-card-heading">
+          <div>
+            <span>Personal information</span>
+            <h3>Profile details</h3>
+          </div>
+          <span>✦</span>
+        </div>
+
+        <label>Full name
+          <input id="profileName" type="text" required>
+        </label>
+
+        <label>Email
+          <input id="profileEmail" type="email" disabled>
+        </label>
+
+        <label>Phone
+          <input id="profilePhone" type="tel" required placeholder="+966 5XXXXXXXX">
+        </label>
+
+        <label>City
+          <input id="profileCity" type="text" placeholder="Riyadh">
+        </label>
+
+        <label>Delivery address
+          <textarea id="profileAddress" rows="3" required></textarea>
+        </label>
+
+        <p id="profileMessage" class="profile-message"></p>
+
+        <button class="primary-btn profile-save-btn" type="submit">
+          Save Changes
+        </button>
+      </form>
+
+      <div class="orders-card">
+        <div class="profile-card-heading">
+          <div>
+            <span>Shopping history</span>
+            <h3>My Orders</h3>
+          </div>
+          <span>📦</span>
+        </div>
+
+        <div id="ordersList" class="orders-list">
+          <div class="orders-loading">Loading orders...</div>
+        </div>
+      </div>
+
+      <button type="button" id="logoutBtn" class="logout-btn">
+        Log out
+      </button>
+
+    </div>
+  </section>
+
+
   <!-- BOTTOM NAVIGATION -->
   <nav class="bottom-nav">
 
@@ -418,7 +591,7 @@
       <small>Wishlist</small>
     </a>
 
-    <a href="#" class="nav-item">
+    <a href="#" class="nav-item" id="profileNav">
       <span>♙</span>
       <small>Profile</small>
     </a>
@@ -434,6 +607,7 @@
 
   <script src="js/dynamic-products.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/profile-checkout.js"></script>
 
 </body>
 </html>
