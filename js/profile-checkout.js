@@ -2,7 +2,7 @@
 
 document.addEventListener("DOMContentLoaded", () => {
 
-  const API_URL = "https://zento-e-commerce-40xm.onrender.com";
+  const API_URL = "https://zento-e-commerce-all.onrender.com";
 
   const token = () => localStorage.getItem("zento_token");
 

@@ -1081,7 +1081,7 @@ document.addEventListener(
   () => {
 
     const API_URL =
-      "https://zento-e-commerce-40xm.onrender.com";
+      "https://zento-e-commerce-all.onrender.com";
 
     const authScreen =
       document.getElementById("authScreen");
