@@ -30,23 +30,45 @@ function showLogin() {
 
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-
   loginError.textContent = "";
 
   const email = document.getElementById("adminEmail").value.trim();
   const password = document.getElementById("adminPassword").value;
 
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password
-  });
-
-  if (error) {
-    loginError.textContent = error.message;
+  if (!email || !password) {
+    loginError.textContent = "Email and password are required.";
     return;
   }
 
-  showAdmin();
+  try {
+    const response = await fetch("/api/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        email,
+        password
+      })
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || data.status !== "success") {
+      throw new Error(data.message || "Invalid email or password.");
+    }
+
+    if (data.user?.role !== "admin") {
+      throw new Error("This account is not an admin account.");
+    }
+
+    localStorage.setItem("zento_admin_token", data.token);
+    localStorage.setItem("zento_admin_user", JSON.stringify(data.user));
+
+    showAdmin();
+  } catch (error) {
+    loginError.textContent = error.message || "Login failed.";
+  }
 });
 
 navItems.forEach((item) => {
@@ -70,29 +92,38 @@ navItems.forEach((item) => {
   });
 });
 
-document.getElementById("logoutBtn").addEventListener("click", async () => {
-  await supabase.auth.signOut();
+document.getElementById("logoutBtn").addEventListener("click", () => {
+  localStorage.removeItem("zento_admin_token");
+  localStorage.removeItem("zento_admin_user");
   showLogin();
 });
 
 async function checkSession() {
-  const { data, error } = await supabase.auth.getSession();
+  const token = localStorage.getItem("zento_admin_token");
 
-  if (error || !data.session) {
+  if (!token) {
     showLogin();
     return;
   }
 
-  showAdmin();
-}
+  try {
+    const response = await fetch("/api/profile", {
+      headers: {
+        "Authorization": `Bearer ${token}`
+      }
+    });
 
-supabase.auth.onAuthStateChange((event, session) => {
-  if (session) {
+    if (!response.ok) {
+      throw new Error("Admin session expired");
+    }
+
     showAdmin();
-  } else {
+  } catch (_) {
+    localStorage.removeItem("zento_admin_token");
+    localStorage.removeItem("zento_admin_user");
     showLogin();
   }
-});
+}
 
 checkSession();
 
@@ -429,8 +460,7 @@ function adminEscape(value) {
 }
 
 async function getAdminAccessToken() {
-  const { data } = await supabase.auth.getSession();
-  return data?.session?.access_token || "";
+  return localStorage.getItem("zento_admin_token") || "";
 }
 
 async function adminApi(url, options = {}) {
