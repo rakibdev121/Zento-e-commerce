@@ -1617,7 +1617,6 @@ document.addEventListener(
     signupFormElement?.addEventListener(
       "submit",
       async event => {
-
         event.preventDefault();
 
         const name =
@@ -1638,54 +1637,32 @@ document.addEventListener(
             ?.value || "";
 
         if (signupMessage) {
-          signupMessage.textContent =
-            "Creating account...";
+          signupMessage.textContent = "Creating account...";
         }
 
         try {
+          const response = await fetch(
+            `${API_URL}/api/signup`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                name,
+                email,
+                password
+              })
+            }
+          );
 
-          const response =
-            await fetch(
-              `${API_URL}/api/signup`,
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type":
-                    "application/json"
-                },
-                body: JSON.stringify({
-                  name,
-                  email,
-                  password
-                })
-              }
-            );
-
-          const data =
-            await response.json();
+          const data = await response.json();
 
           if (!response.ok) {
-
             if (signupMessage) {
               signupMessage.textContent =
-                data.message ||
-                "Signup failed";
+                data.message || "Signup failed";
             }
-
-            return;
-          }
-
-          if (data.verification_required) {
-
-            showOtpVerification(
-              email,
-              data.email
-            );
-
-            if (signupMessage) {
-              signupMessage.textContent = "";
-            }
-
             return;
           }
 
@@ -1696,25 +1673,19 @@ document.addEventListener(
 
           signupFormElement.reset();
 
-          setTimeout(
-            () => {
+          setTimeout(() => {
+            showLoginScreen();
 
-              showLoginScreen();
+            const loginEmail =
+              document.getElementById("loginEmail");
 
-              const loginEmail =
-                document.getElementById(
-                  "loginEmail"
-                );
+            if (loginEmail) {
+              loginEmail.value = email;
+            }
+          }, 800);
 
-              if (loginEmail) {
-                loginEmail.value = email;
-              }
-
-            },
-            800
-          );
-
-        } catch {
+        } catch (error) {
+          console.error("Signup error:", error);
 
           if (signupMessage) {
             signupMessage.textContent =

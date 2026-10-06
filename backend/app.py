@@ -456,61 +456,32 @@ def signup():
                 "message": "Email already exists"
             }, 409
 
-        otp = str(secrets.randbelow(900000) + 100000)
-        otp_hash = hash_signup_otp(otp)
         password_hash = generate_password_hash(password)
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
-
-        cursor.execute(
-            "DELETE FROM signup_otps WHERE email = %s",
-            (email,)
-        )
 
         cursor.execute(
             """
-            INSERT INTO signup_otps
-            (email, name, password_hash, otp_hash, expires_at, attempts, last_sent_at)
-            VALUES (%s, %s, %s, %s, %s, 0, NOW())
+            INSERT INTO users (name, email, password_hash, email_verified)
+            VALUES (%s, %s, %s, TRUE)
+            RETURNING id, name, email
             """,
-            (email, name, password_hash, otp_hash, expires_at)
+            (name, email, password_hash)
         )
 
+        user = cursor.fetchone()
         conn.commit()
         cursor.close()
         conn.close()
 
-        try:
-            send_signup_otp(email, otp)
-        except Exception as email_error:
-            conn = psycopg2.connect(os.environ["DATABASE_URL"])
-            cursor = conn.cursor()
-            cursor.execute(
-                "DELETE FROM signup_otps WHERE email = %s",
-                (email,)
-            )
-            conn.commit()
-            cursor.close()
-            conn.close()
-
-            return {
-                "status": "error",
-                "message": "Unable to send verification email. Please try again."
-            }, 502
-
-        masked = email
-        if "@" in email:
-            local, domain = email.split("@", 1)
-            if len(local) > 2:
-                masked = local[0] + ("*" * (len(local) - 2)) + local[-1] + "@" + domain
-            else:
-                masked = "*" * len(local) + "@" + domain
-
         return {
             "status": "success",
-            "verification_required": True,
-            "message": "Verification code sent to your email",
-            "email": masked
-        }, 200
+            "verification_required": False,
+            "message": "Account created successfully",
+            "user": {
+                "id": user[0],
+                "name": user[1],
+                "email": user[2]
+            }
+        }, 201
 
     except psycopg2.errors.UniqueViolation:
         return {
