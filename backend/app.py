@@ -806,7 +806,7 @@ def promote_admin_self():
         return {"status": "error", "message": "Not authorized"}, 403
 
     try:
-        conn = get_db_connection()
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cur = conn.cursor()
         cur.execute(
             "UPDATE users SET role = 'admin' WHERE LOWER(email) = LOWER(%s) RETURNING id, name, email, role",
