@@ -67,7 +67,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function money(value) {
-    return `$${Number(value || 0).toFixed(2)}`;
+    return `৳${Number(value || 0).toFixed(2)}`;
   }
 
   async function loadProfile() {
@@ -190,6 +190,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function getCart() {
     try {
+      const user = getUser();
+
+      if (user && user.id) {
+        const userKey = `zento_cart_user_${user.id}`;
+        const userCart = localStorage.getItem(userKey);
+
+        if (userCart) {
+          return JSON.parse(userCart);
+        }
+      }
+
       return JSON.parse(
         localStorage.getItem("novacart_cart") || "[]"
       );
@@ -240,6 +251,33 @@ document.addEventListener("DOMContentLoaded", () => {
     if (subtotalEl) subtotalEl.textContent = money(subtotal);
     if (deliveryEl) deliveryEl.textContent = delivery === 0 ? "FREE" : money(delivery);
     if (totalEl) totalEl.textContent = money(total);
+  }
+
+  function setupPaymentOptions() {
+    const options = document.querySelectorAll('input[name="paymentMethod"]');
+    const cardBox = document.getElementById("cardPaymentBox");
+
+    if (!options.length) return;
+
+    function updatePaymentUI() {
+      const selected = document.querySelector('input[name="paymentMethod"]:checked');
+      const method = selected?.value || "cod";
+
+      document.querySelectorAll(".payment-option").forEach(option => {
+        const radio = option.querySelector('input[name="paymentMethod"]');
+        option.classList.toggle("active", radio?.checked === true);
+      });
+
+      if (cardBox) {
+        cardBox.hidden = method !== "card";
+      }
+    }
+
+    options.forEach(input => {
+      input.addEventListener("change", updatePaymentUI);
+    });
+
+    updatePaymentUI();
   }
 
   async function openCheckout() {
@@ -315,7 +353,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (!cart.length) return;
 
+    const selectedPayment =
+      document.querySelector('input[name="paymentMethod"]:checked')?.value || "cod";
+
     const message = document.getElementById("checkoutMessage");
+
+    if (selectedPayment === "card") {
+      if (message) {
+        message.textContent =
+          "Card payment is not active yet. Please select Cash on Delivery.";
+      }
+      return;
+    }
     const button = checkoutForm.querySelector("button[type=submit]");
 
     if (message) message.textContent = "Placing your order...";
@@ -329,9 +378,16 @@ document.addEventListener("DOMContentLoaded", () => {
           phone: document.getElementById("checkoutPhone")?.value.trim(),
           city: document.getElementById("checkoutCity")?.value.trim(),
           address: document.getElementById("checkoutAddress")?.value.trim(),
+          payment_method: document.querySelector('input[name="paymentMethod"]:checked')?.value || "cod",
           items: cart
         })
       });
+
+      const currentUser = getUser();
+
+      if (currentUser && currentUser.id) {
+        localStorage.removeItem(`zento_cart_user_${currentUser.id}`);
+      }
 
       localStorage.removeItem("novacart_cart");
 
@@ -354,6 +410,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (button) button.disabled = false;
     }
   });
+
+  setupPaymentOptions();
 
   logoutBtn?.addEventListener("click", () => {
     localStorage.removeItem("zento_token");

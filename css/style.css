@@ -1911,3 +1911,129 @@ body.auth-active {
     padding: 17px;
   }
 }
+
+
+/* =========================================
+   ZENTO PAYMENT OPTIONS
+========================================= */
+
+.payment-options {
+  display: grid;
+  gap: 12px;
+}
+
+.payment-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  padding: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 14px;
+  background: #fff;
+  transition: 0.2s ease;
+}
+
+.payment-option:hover {
+  transform: translateY(-1px);
+}
+
+.payment-option.active {
+  border-color: currentColor;
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.payment-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.payment-radio {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.payment-option:not(.active) .payment-radio {
+  color: transparent;
+}
+
+.payment-option strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.payment-option small {
+  display: block;
+  opacity: 0.65;
+}
+
+/* Card payment details */
+
+.card-payment-box {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.025);
+}
+
+.card-payment-box[hidden] {
+  display: none;
+}
+
+.card-payment-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+
+.card-payment-note span {
+  font-size: 13px;
+  opacity: 0.65;
+}
+
+.card-payment-box > label,
+.card-row > label {
+  display: block;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.card-payment-box input {
+  width: 100%;
+  margin-top: 7px;
+  box-sizing: border-box;
+}
+
+.card-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.card-gateway-message {
+  margin: 6px 0 0;
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+@media (max-width: 520px) {
+  .card-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}

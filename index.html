@@ -248,8 +248,8 @@
             </div>
 
             <div class="modal-price">
-              <strong id="modalProductPrice">$49.99</strong>
-              <del id="modalProductOldPrice">$69.99</del>
+              <strong id="modalProductPrice">৳49.99</strong>
+              <del id="modalProductOldPrice">৳69.99</del>
             </div>
 
             <p class="modal-description" id="modalProductDescription">
@@ -367,19 +367,19 @@
 
       <div class="summary-row">
         <span>Subtotal</span>
-        <strong id="cartSubtotal">$0.00</strong>
+        <strong id="cartSubtotal">৳0.00</strong>
       </div>
 
       <div class="summary-row">
         <span>Delivery</span>
-        <strong id="cartDelivery">$0.00</strong>
+        <strong id="cartDelivery">৳0.00</strong>
       </div>
 
       <div class="summary-divider"></div>
 
       <div class="summary-row total">
         <span>Total</span>
-        <strong id="cartTotal">$0.00</strong>
+        <strong id="cartTotal">৳0.00</strong>
       </div>
 
       <button class="checkout-btn" id="checkoutBtn">
@@ -441,13 +441,98 @@
             </div>
           </div>
 
-          <div class="payment-option active">
+          <div class="payment-options" id="paymentOptions">
+
+          <label class="payment-option active">
+            <input
+              type="radio"
+              name="paymentMethod"
+              value="cod"
+              checked
+            >
             <span class="payment-radio">✓</span>
             <div>
               <strong>Cash on Delivery</strong>
               <small>Pay when your order arrives</small>
             </div>
+          </label>
+
+          <label class="payment-option">
+            <input
+              type="radio"
+              name="paymentMethod"
+              value="card"
+            >
+            <span class="payment-radio">✓</span>
+            <div>
+              <strong>Card Payment</strong>
+              <small>Pay securely by card</small>
+            </div>
+          </label>
+
+        </div>
+
+        <div class="card-payment-box" id="cardPaymentBox" hidden>
+
+          <div class="card-payment-note">
+            <strong>Card Payment</strong>
+            <span>Card gateway will be connected soon.</span>
           </div>
+
+          <label>
+            Cardholder Name
+            <input
+              type="text"
+              id="cardName"
+              autocomplete="cc-name"
+              placeholder="Name on card"
+            >
+          </label>
+
+          <label>
+            Card Number
+            <input
+              type="text"
+              id="cardNumber"
+              inputmode="numeric"
+              autocomplete="cc-number"
+              maxlength="19"
+              placeholder="1234 5678 9012 3456"
+            >
+          </label>
+
+          <div class="card-row">
+
+            <label>
+              Expiry Date
+              <input
+                type="text"
+                id="cardExpiry"
+                inputmode="numeric"
+                autocomplete="cc-exp"
+                maxlength="5"
+                placeholder="MM/YY"
+              >
+            </label>
+
+            <label>
+              CVV
+              <input
+                type="password"
+                id="cardCvv"
+                inputmode="numeric"
+                autocomplete="cc-csc"
+                maxlength="4"
+                placeholder="CVV"
+              >
+            </label>
+
+          </div>
+
+          <p class="card-gateway-message">
+            Card payments are not active yet. Please select Cash on Delivery to test checkout.
+          </p>
+
         </div>
 
         <p id="checkoutMessage" class="checkout-message"></p>
@@ -468,17 +553,17 @@
 
         <div class="checkout-total-row">
           <span>Subtotal</span>
-          <strong id="checkoutSubtotal">$0.00</strong>
+          <strong id="checkoutSubtotal">৳0.00</strong>
         </div>
 
         <div class="checkout-total-row">
           <span>Delivery</span>
-          <strong id="checkoutDelivery">$0.00</strong>
+          <strong id="checkoutDelivery">৳0.00</strong>
         </div>
 
         <div class="checkout-grand-total">
           <span>Total</span>
-          <strong id="checkoutTotal">$0.00</strong>
+          <strong id="checkoutTotal">৳0.00</strong>
         </div>
       </aside>
     </div>

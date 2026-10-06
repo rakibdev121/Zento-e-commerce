@@ -393,13 +393,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (modalProductPrice) {
       modalProductPrice.textContent =
-        `$${product.price.toFixed(2)}`;
+        `৳${product.price.toFixed(2)}`;
     }
 
     if (modalProductOldPrice) {
       if (product.oldPrice !== null && product.oldPrice !== undefined) {
         modalProductOldPrice.textContent =
-          `$${Number(product.oldPrice).toFixed(2)}`;
+          `৳${Number(product.oldPrice).toFixed(2)}`;
         modalProductOldPrice.style.display = "";
       } else {
         modalProductOldPrice.textContent = "";
@@ -853,15 +853,15 @@ document.addEventListener("DOMContentLoaded", () => {
       cartSummary?.classList.add("hidden");
 
       if (cartSubtotal) {
-        cartSubtotal.textContent = "$0.00";
+        cartSubtotal.textContent = "৳0.00";
       }
 
       if (cartDelivery) {
-        cartDelivery.textContent = "$0.00";
+        cartDelivery.textContent = "৳0.00";
       }
 
       if (cartTotal) {
-        cartTotal.textContent = "$0.00";
+        cartTotal.textContent = "৳0.00";
       }
 
       return;
@@ -899,11 +899,11 @@ document.addEventListener("DOMContentLoaded", () => {
           <h3>${item.name}</h3>
 
           <strong>
-            $${price.toFixed(2)}
+            ৳${price.toFixed(2)}
           </strong>
 
           <small>
-            $${(price * quantity).toFixed(2)} total
+            ৳${(price * quantity).toFixed(2)} total
           </small>
 
           <div class="cart-item-actions">
@@ -958,19 +958,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (cartSubtotal) {
       cartSubtotal.textContent =
-        `$${subtotal.toFixed(2)}`;
+        `৳${subtotal.toFixed(2)}`;
     }
 
     if (cartDelivery) {
       cartDelivery.textContent =
         delivery === 0
           ? "FREE"
-          : `$${delivery.toFixed(2)}`;
+          : `৳${delivery.toFixed(2)}`;
     }
 
     if (cartTotal) {
       cartTotal.textContent =
-        `$${total.toFixed(2)}`;
+        `৳${total.toFixed(2)}`;
     }
   }
 
@@ -1075,22 +1075,8 @@ document.addEventListener("DOMContentLoaded", () => {
     closeCartPage
   );
 
-  checkoutBtn?.addEventListener(
-    "click",
-    () => {
 
-      if (cart.length === 0) {
-        showToast(
-          "Your cart is empty 🛒"
-        );
-        return;
-      }
-
-      showToast(
-        "Checkout is coming next 🚀"
-      );
-    }
-  );
+  
 
   /* =========================================
      INITIALIZE

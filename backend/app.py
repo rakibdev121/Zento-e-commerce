@@ -918,9 +918,15 @@ def ensure_order_tables():
             subtotal NUMERIC(10,2) NOT NULL,
             delivery_fee NUMERIC(10,2) NOT NULL DEFAULT 0,
             total NUMERIC(10,2) NOT NULL,
+            payment_method TEXT NOT NULL DEFAULT 'cod',
             status TEXT NOT NULL DEFAULT 'pending',
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
+    """)
+
+    cursor.execute("""
+        ALTER TABLE orders
+        ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'cod'
     """)
 
     cursor.execute("""
@@ -1132,6 +1138,24 @@ def create_order():
         address = str(data.get("address", "")).strip()
         city = str(data.get("city", "")).strip()
 
+        payment_method = str(
+            data.get("payment_method", "cod")
+        ).strip().lower()
+
+        if payment_method not in ("cod", "card"):
+            return {
+                "status": "error",
+                "message": "Invalid payment method"
+            }, 400
+
+        # Card gateway is not active yet.
+        # Never store or process card number/CVV on this backend.
+        if payment_method == "card":
+            return {
+                "status": "error",
+                "message": "Card payment is not active yet. Please select Cash on Delivery."
+            }, 400
+
         if not items:
             return {
                 "status": "error",
@@ -1221,9 +1245,10 @@ def create_order():
                 subtotal,
                 delivery_fee,
                 total,
+                payment_method,
                 status
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'pending')
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending')
             RETURNING id, created_at
         """, (
             user["user_id"],
@@ -1233,7 +1258,8 @@ def create_order():
             city,
             subtotal,
             delivery_fee,
-            total
+            total,
+            payment_method
         ))
 
         order_id, created_at = cursor.fetchone()
@@ -1279,6 +1305,7 @@ def create_order():
                 "subtotal": subtotal,
                 "delivery_fee": delivery_fee,
                 "total": total,
+                "payment_method": payment_method,
                 "status": "pending",
                 "created_at": str(created_at)
             }
@@ -1324,6 +1351,7 @@ def get_orders():
                 subtotal,
                 delivery_fee,
                 total,
+                payment_method,
                 status,
                 created_at
             FROM orders
@@ -1368,8 +1396,9 @@ def get_orders():
                 "subtotal": float(row[5]),
                 "delivery_fee": float(row[6]),
                 "total": float(row[7]),
-                "status": row[8],
-                "created_at": str(row[9]),
+                "payment_method": row[8],
+                "status": row[9],
+                "created_at": str(row[10]),
                 "items": items
             })
 
