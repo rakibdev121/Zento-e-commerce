@@ -793,47 +793,6 @@ def login():
 
 
 
-@app.route("/api/promote-admin-self", methods=["POST"])
-def promote_admin_self():
-    user = get_authenticated_user()
-
-    if not user:
-        return {"status": "error", "message": "Authentication required"}, 401
-
-    email = str(user.get("email", "")).strip().lower()
-
-    if email != "rakibhan490@gmail.com":
-        return {"status": "error", "message": "Not authorized"}, 403
-
-    try:
-        conn = psycopg2.connect(os.environ["DATABASE_URL"])
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE users SET role = 'admin' WHERE LOWER(email) = LOWER(%s) RETURNING id, name, email, role",
-            (email,)
-        )
-        row = cur.fetchone()
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        if not row:
-            return {"status": "error", "message": "User account not found"}, 404
-
-        return {
-            "status": "success",
-            "message": "Admin role assigned successfully",
-            "user": {
-                "id": row[0],
-                "name": row[1],
-                "email": row[2],
-                "role": row[3]
-            }
-        }
-
-    except Exception as e:
-        return {"status": "error", "message": str(e)}, 500
-
 @app.route("/api/create-admin", methods=["POST"])
 def create_admin():
     try:
