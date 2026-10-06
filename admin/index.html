@@ -178,12 +178,18 @@
         <div class="panel-header">
           <div>
             <h2>Orders</h2>
-            <p>Manage customer orders</p>
+            <p>Manage, approve and track customer orders</p>
           </div>
+
+          <button id="refreshOrdersBtn" class="primary-btn">
+            ↻ Refresh Orders
+          </button>
         </div>
 
-        <div id="ordersList" class="empty-state">
-          No orders yet.
+        <div id="ordersMessage" class="order-admin-message"></div>
+
+        <div id="ordersList" class="admin-orders-list">
+          Loading orders...
         </div>
       </div>
     </section>

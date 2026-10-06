@@ -71,6 +71,16 @@ document.addEventListener("DOMContentLoaded", () => {
     return `৳${Number(value || 0).toFixed(2)}`;
   }
 
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+
   async function loadProfile() {
     if (!token()) return;
 
@@ -125,7 +135,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function loadOrders() {
     const list = document.getElementById("ordersList");
-    if (!list || !token()) return;
+    if (!list) return;
 
     list.innerHTML = '<div class="orders-loading">Loading orders...</div>';
 
@@ -135,48 +145,115 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!data.orders?.length) {
         list.innerHTML = `
           <div class="orders-empty">
-            <div>📦</div>
             <strong>No orders yet</strong>
-            <span>Your completed orders will appear here.</span>
+            <span>Your orders will appear here.</span>
           </div>
         `;
         return;
       }
 
-      list.innerHTML = data.orders.map(order => `
-        <article class="order-card">
-          <div class="order-top">
-            <div>
-              <small>Order #${order.id}</small>
-              <strong>${new Date(order.created_at).toLocaleDateString()}</strong>
-            </div>
-            <span class="order-status status-${order.status}">
-              ${order.status}
-            </span>
-          </div>
+      const statusLabels = {
+        pending: "Pending",
+        approved: "Approved",
+        processing: "Processing",
+        shipped: "Shipped",
+        out_for_delivery: "Out for Delivery",
+        delivered: "Delivered"
+      };
 
-          <div class="order-items">
-            ${order.items.map(item => `
-              <div class="order-item">
-                <span>${item.name} × ${item.quantity}</span>
-                <strong>${money(item.subtotal)}</strong>
+      const steps = [
+        ["pending", "Order Placed"],
+        ["approved", "Approved"],
+        ["processing", "Processing"],
+        ["shipped", "Shipped"],
+        ["out_for_delivery", "Out for Delivery"],
+        ["delivered", "Delivered"]
+      ];
+
+      list.innerHTML = data.orders.map(order => {
+        const currentIndex = Math.max(
+          0,
+          steps.findIndex(step => step[0] === order.status)
+        );
+
+        const tracking = steps.map((step, index) => `
+          <div class="tracking-step ${index <= currentIndex ? "done" : ""} ${index === currentIndex ? "current" : ""}">
+            <div class="tracking-dot">${index <= currentIndex ? "✓" : ""}</div>
+            <span>${step[1]}</span>
+          </div>
+        `).join("");
+
+        return `
+          <article class="order-card">
+            <div class="order-top">
+              <div>
+                <small>Order #${order.id}</small>
+                <strong>${new Date(order.created_at).toLocaleDateString()}</strong>
               </div>
-            `).join("")}
-          </div>
 
-          <div class="order-bottom">
-            <span>Total</span>
-            <strong>${money(order.total)}</strong>
-          </div>
-        </article>
-      `).join("");
+              <span class="order-status status-${order.status}">
+                ${statusLabels[order.status] || order.status}
+              </span>
+            </div>
+
+            <div class="order-items">
+              ${order.items.map(item => `
+                <div class="order-item">
+                  <div>
+                    <strong>${escapeHtml(item.name)}</strong>
+                    <small>${item.quantity} × ${money(item.price)}</small>
+                  </div>
+                  <strong>${money(item.subtotal)}</strong>
+                </div>
+              `).join("")}
+            </div>
+
+            <div class="order-tracking">
+              <div class="tracking-title">Order Tracking</div>
+              <div class="tracking-line">
+                ${tracking}
+              </div>
+            </div>
+
+            <div class="order-info-grid">
+              <div>
+                <small>Delivery Address</small>
+                <strong>${escapeHtml(order.address)}, ${escapeHtml(order.city)}</strong>
+              </div>
+
+              <div>
+                <small>Phone</small>
+                <strong>${escapeHtml(order.phone)}</strong>
+              </div>
+
+              <div>
+                <small>Payment</small>
+                <strong>${order.payment_method === "cod" ? "Cash on Delivery" : "Card Payment"}</strong>
+              </div>
+            </div>
+
+            <div class="order-bottom">
+              <div>
+                <small>Total</small>
+                <strong>${money(order.total)}</strong>
+              </div>
+
+              <div>
+                <small>Updated</small>
+                <strong>${order.updated_at ? new Date(order.updated_at).toLocaleString() : "-"}</strong>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join("");
 
     } catch (error) {
       list.innerHTML = `
-        <div class="orders-error">${error.message}</div>
+        <div class="orders-error">${escapeHtml(error.message)}</div>
       `;
     }
   }
+
 
   async function openProfile() {
     if (!token()) {

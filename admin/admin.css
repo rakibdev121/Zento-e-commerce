@@ -509,3 +509,190 @@ nav {
   border-radius: 10px;
   border: 1px solid #e2e8f0;
 }
+
+
+/* =========================================================
+   ZENTO ADMIN ORDERS
+   ========================================================= */
+
+.admin-orders-list {
+  display: grid;
+  gap: 18px;
+}
+
+.admin-order-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  padding: 20px;
+  background: #fff;
+}
+
+.admin-order-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  align-items: flex-start;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.admin-order-header h3 {
+  margin: 5px 0;
+}
+
+.admin-order-id {
+  font-weight: 700;
+  color: #0b8f83;
+}
+
+.admin-order-status {
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #f1f5f9;
+}
+
+.status-pending {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.status-approved {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.status-processing {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.status-shipped {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.status-out_for_delivery {
+  background: #fdf4ff;
+  color: #a21caf;
+}
+
+.status-delivered {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.admin-order-customer {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.admin-order-customer > div {
+  padding: 13px;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.admin-order-customer span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.admin-order-customer strong {
+  display: block;
+}
+
+.admin-order-items {
+  border-top: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.admin-order-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 12px 0;
+}
+
+.admin-order-item small {
+  display: block;
+  color: #64748b;
+  margin-top: 3px;
+}
+
+.admin-order-total {
+  display: flex;
+  justify-content: flex-end;
+  gap: 30px;
+  padding: 15px 0;
+}
+
+.admin-order-total span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.admin-order-total strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.admin-order-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-order-status-control {
+  margin-top: 18px;
+  padding-top: 15px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.order-status-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.order-status-btn {
+  border: 1px solid #d9dee7;
+  background: #fff;
+  padding: 8px 11px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.order-status-btn:hover,
+.order-status-btn.active {
+  border-color: #0b8f83;
+  color: #0b8f83;
+  background: #ecfdf5;
+}
+
+.order-admin-message {
+  min-height: 20px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #0b8f83;
+}
+
+@media (max-width: 800px) {
+  .admin-order-customer {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-order-total {
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+}

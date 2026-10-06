@@ -920,6 +920,8 @@ def ensure_order_tables():
             total NUMERIC(10,2) NOT NULL,
             payment_method TEXT NOT NULL DEFAULT 'cod',
             status TEXT NOT NULL DEFAULT 'pending',
+            approved_at TIMESTAMPTZ,
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
     """)
@@ -927,6 +929,16 @@ def ensure_order_tables():
     cursor.execute("""
         ALTER TABLE orders
         ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'cod'
+    """)
+
+    cursor.execute("""
+        ALTER TABLE orders
+        ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ
+    """)
+
+    cursor.execute("""
+        ALTER TABLE orders
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()
     """)
 
     cursor.execute("""
@@ -1192,6 +1204,19 @@ def create_order():
 
             product = cursor.fetchone()
 
+            # Some older cart entries may contain a frontend/local ID
+            # instead of the real database product ID.
+            # Fall back to product name so existing carts still work.
+            if not product and name:
+                cursor.execute("""
+                    SELECT id, name, price, stock
+                    FROM products
+                    WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s))
+                    ORDER BY id ASC
+                    LIMIT 1
+                """, (name,))
+                product = cursor.fetchone()
+
             if not product:
                 conn.rollback()
                 cursor.close()
@@ -1353,6 +1378,8 @@ def get_orders():
                 total,
                 payment_method,
                 status,
+                approved_at,
+                updated_at,
                 created_at
             FROM orders
             WHERE user_id = %s
@@ -1398,7 +1425,9 @@ def get_orders():
                 "total": float(row[7]),
                 "payment_method": row[8],
                 "status": row[9],
-                "created_at": str(row[10]),
+                "approved_at": str(row[10]) if row[10] else None,
+                "updated_at": str(row[11]) if row[11] else None,
+                "created_at": str(row[12]),
                 "items": items
             })
 
@@ -1416,3 +1445,275 @@ def get_orders():
             "message": str(e)
         }, 500
 
+
+
+# =========================================================
+# ZENTO ADMIN ORDER MANAGEMENT V1
+# =========================================================
+
+VALID_ORDER_STATUSES = (
+    "pending",
+    "approved",
+    "processing",
+    "shipped",
+    "out_for_delivery",
+    "delivered"
+)
+
+
+def admin_user_from_request():
+    """
+    Admin authentication helper.
+
+    Supports the same JWT authentication already used by the
+    customer backend. Admin access is granted when the token
+    contains role=admin.
+    """
+    user = get_authenticated_user()
+
+    if not user:
+        return None
+
+    role = str(user.get("role", "")).strip().lower()
+
+    if role != "admin":
+        return None
+
+    return user
+
+
+@app.route("/api/admin/orders", methods=["GET"])
+def admin_get_orders():
+    admin = admin_user_from_request()
+
+    if not admin:
+        return {
+            "status": "error",
+            "message": "Admin authentication required"
+        }, 401
+
+    try:
+        ensure_order_tables()
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                id,
+                user_id,
+                customer_name,
+                phone,
+                address,
+                city,
+                subtotal,
+                delivery_fee,
+                total,
+                payment_method,
+                status,
+                approved_at,
+                updated_at,
+                created_at
+            FROM orders
+            ORDER BY id DESC
+        """)
+
+        rows = cursor.fetchall()
+        orders = []
+
+        for row in rows:
+            cursor.execute("""
+                SELECT
+                    product_id,
+                    product_name,
+                    price,
+                    quantity,
+                    subtotal
+                FROM order_items
+                WHERE order_id = %s
+                ORDER BY id ASC
+            """, (row[0],))
+
+            item_rows = cursor.fetchall()
+
+            items = [
+                {
+                    "product_id": item[0],
+                    "name": item[1],
+                    "price": float(item[2]),
+                    "quantity": item[3],
+                    "subtotal": float(item[4])
+                }
+                for item in item_rows
+            ]
+
+            orders.append({
+                "id": row[0],
+                "user_id": row[1],
+                "customer_name": row[2],
+                "phone": row[3],
+                "address": row[4],
+                "city": row[5],
+                "subtotal": float(row[6]),
+                "delivery_fee": float(row[7]),
+                "total": float(row[8]),
+                "payment_method": row[9],
+                "status": row[10],
+                "approved_at": str(row[11]) if row[11] else None,
+                "updated_at": str(row[12]) if row[12] else None,
+                "created_at": str(row[13]),
+                "items": items
+            })
+
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "orders": orders
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
+
+
+@app.route("/api/admin/orders/<int:order_id>/status", methods=["PUT"])
+def admin_update_order_status(order_id):
+    admin = admin_user_from_request()
+
+    if not admin:
+        return {
+            "status": "error",
+            "message": "Admin authentication required"
+        }, 401
+
+    try:
+        data = request.get_json() or {}
+        new_status = str(data.get("status", "")).strip().lower()
+
+        if new_status not in VALID_ORDER_STATUSES:
+            return {
+                "status": "error",
+                "message": "Invalid order status"
+            }, 400
+
+        ensure_order_tables()
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        if new_status == "approved":
+            cursor.execute("""
+                UPDATE orders
+                SET
+                    status = %s,
+                    approved_at = COALESCE(approved_at, NOW()),
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING id, status, approved_at, updated_at
+            """, (new_status, order_id))
+        else:
+            cursor.execute("""
+                UPDATE orders
+                SET
+                    status = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING id, status, approved_at, updated_at
+            """, (new_status, order_id))
+
+        row = cursor.fetchone()
+
+        if not row:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+
+            return {
+                "status": "error",
+                "message": "Order not found"
+            }, 404
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": f"Order #{order_id} status updated to {new_status}",
+            "order": {
+                "id": row[0],
+                "status": row[1],
+                "approved_at": str(row[2]) if row[2] else None,
+                "updated_at": str(row[3]) if row[3] else None
+            }
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500
+
+
+@app.route("/api/admin/orders/<int:order_id>/approve", methods=["POST"])
+def admin_approve_order(order_id):
+    admin = admin_user_from_request()
+
+    if not admin:
+        return {
+            "status": "error",
+            "message": "Admin authentication required"
+        }, 401
+
+    try:
+        ensure_order_tables()
+
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE orders
+            SET
+                status = 'approved',
+                approved_at = COALESCE(approved_at, NOW()),
+                updated_at = NOW()
+            WHERE id = %s
+            RETURNING id, status, approved_at, updated_at
+        """, (order_id,))
+
+        row = cursor.fetchone()
+
+        if not row:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+
+            return {
+                "status": "error",
+                "message": "Order not found"
+            }, 404
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "status": "success",
+            "message": f"Order #{order_id} approved successfully",
+            "order": {
+                "id": row[0],
+                "status": row[1],
+                "approved_at": str(row[2]) if row[2] else None,
+                "updated_at": str(row[3]) if row[3] else None
+            }
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }, 500

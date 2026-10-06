@@ -2037,3 +2037,114 @@ body.auth-active {
     gap: 0;
   }
 }
+
+
+/* =========================================================
+   ZENTO ORDER TRACKING
+   ========================================================= */
+
+.order-tracking {
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+}
+
+.tracking-title {
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.tracking-line {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(80px, 1fr));
+  gap: 6px;
+}
+
+.tracking-step {
+  position: relative;
+  text-align: center;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.tracking-step::after {
+  content: "";
+  position: absolute;
+  top: 13px;
+  left: 58%;
+  width: 84%;
+  height: 2px;
+  background: #e2e8f0;
+  z-index: 0;
+}
+
+.tracking-step:last-child::after {
+  display: none;
+}
+
+.tracking-dot {
+  position: relative;
+  z-index: 1;
+  width: 27px;
+  height: 27px;
+  margin: 0 auto 7px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+
+.tracking-step.done {
+  color: #0b8f83;
+}
+
+.tracking-step.done .tracking-dot {
+  background: #0b8f83;
+  color: white;
+}
+
+.tracking-step.current .tracking-dot {
+  box-shadow: 0 0 0 4px rgba(11, 143, 131, .14);
+}
+
+.order-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 15px 0;
+}
+
+.order-info-grid > div {
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 10px;
+}
+
+.order-info-grid small,
+.order-bottom small {
+  display: block;
+  color: #64748b;
+  margin-bottom: 5px;
+}
+
+.order-info-grid strong {
+  display: block;
+}
+
+@media (max-width: 700px) {
+  .tracking-line {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px 4px;
+  }
+
+  .tracking-step::after {
+    display: none;
+  }
+
+  .order-info-grid {
+    grid-template-columns: 1fr;
+  }
+}
