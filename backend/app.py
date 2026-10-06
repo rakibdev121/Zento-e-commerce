@@ -381,7 +381,8 @@ def send_signup_otp(email, otp):
         data=body,
         headers={
             "Authorization": f"Bearer {RESEND_API_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "User-Agent": "Zento/1.0"
         },
         method="POST"
     )
