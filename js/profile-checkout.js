@@ -1,3 +1,12 @@
+
+const money = window.money || function(value) {
+  const amount = Number(value) || 0;
+  return "৳" + amount.toLocaleString("en-BD", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
+
 /* ZENTO PROFILE + CHECKOUT V1 */
 
 document.addEventListener("DOMContentLoaded", () => {

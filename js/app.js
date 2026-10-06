@@ -1,3 +1,14 @@
+/* ZENTO BDT MONEY FORMATTER */
+function money(value) {
+  const amount = Number(value) || 0;
+  return "৳" + amount.toLocaleString("en-BD", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+window.money = money;
+
 /* =========================================
    ZENTO - MAIN JAVASCRIPT
 ========================================= */
