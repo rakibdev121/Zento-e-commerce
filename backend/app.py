@@ -1,7 +1,7 @@
 import os
 import psycopg2
 from flask_cors import CORS
-from flask import Flask, send_from_directory, redirect
+from flask import Flask, send_from_directory, redirect, request
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,7 +9,17 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 app = Flask(__name__)
+
 CORS(app)
+
+def admin_auth_required():
+    token = request.headers.get("X-Admin-Token")
+    expected = os.environ.get("ADMIN_API_TOKEN")
+
+    if not expected or token != expected:
+        return {"status": "error", "message": "Unauthorized"}, 401
+
+    return None
 
 @app.route("/")
 def home():
@@ -132,6 +142,10 @@ def get_products():
 
 @app.route("/api/products", methods=["POST"])
 def create_product():
+
+    auth_error = admin_auth_required()
+    if auth_error:
+        return auth_error
     try:
         data = request.get_json() or {}
 
@@ -184,6 +198,10 @@ def create_product():
 
 @app.route("/api/products/<int:product_id>", methods=["PUT"])
 def update_product(product_id):
+
+    auth_error = admin_auth_required()
+    if auth_error:
+        return auth_error
     try:
         data = request.get_json() or {}
 
@@ -251,6 +269,10 @@ def update_product(product_id):
 
 @app.route("/api/products/<int:product_id>", methods=["DELETE"])
 def delete_product(product_id):
+
+    auth_error = admin_auth_required()
+    if auth_error:
+        return auth_error
     try:
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cursor = conn.cursor()
