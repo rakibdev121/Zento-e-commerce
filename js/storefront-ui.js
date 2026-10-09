@@ -37,3 +37,43 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
 });
+
+
+/* =========================================
+   LIGHT / DARK THEME
+   Saved in localStorage, defaults to the device setting.
+========================================= */
+
+(function () {
+
+  const root = document.documentElement;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+
+  function isDark() {
+    const set = root.getAttribute("data-theme");
+    return set ? set === "dark" : media.matches;
+  }
+
+  function syncMeta() {
+    if (meta) meta.setAttribute("content", isDark() ? "#080e1f" : "#0b1736");
+  }
+
+  document.addEventListener("click", event => {
+    if (!event.target.closest("[data-theme-toggle]")) return;
+
+    const next = isDark() ? "light" : "dark";
+
+    root.setAttribute("data-theme", next);
+
+    try {
+      localStorage.setItem("zento_theme", next);
+    } catch (error) {}
+
+    syncMeta();
+  });
+
+  media.addEventListener?.("change", syncMeta);
+  syncMeta();
+
+})();
