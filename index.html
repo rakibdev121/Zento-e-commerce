@@ -2,298 +2,248 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#0f172a">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1013">
+  <meta name="description" content="Zento Online Store: quality tech and everyday essentials delivered to your door.">
 
-  <title>Zento — Shop Smarter</title>
+  <title>Zento Online Store</title>
+  <link rel="icon" type="image/png" href="assets/zento-logo.png">
 
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="css/style.css?v=20261010-1">
 </head>
 
 <body>
 
+  <!-- ICON SPRITE -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 10v10h14V10M10 20v-6h4v6"/></symbol>
+      <symbol id="i-shop" viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6zM9 8V6a3 3 0 016 0v2"/></symbol>
+      <symbol id="i-cart" viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h11l2-8H6"/></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+      <symbol id="i-truck" viewBox="0 0 24 24"><path d="M2 6h12v10H2zM14 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></symbol>
+      <symbol id="i-return" viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9 9 9 0 00-6.4 2.6L3 8M3 3v5h5"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+      <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+      <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/></symbol>
+      <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></symbol>
+      <symbol id="i-cash" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.8"/></symbol>
+    </defs>
+  </svg>
 
   <!-- AUTH SCREEN -->
   <section id="authScreen" class="auth-screen">
-    <div class="auth-card">
 
-      <div class="auth-logo">
-        <span>✦</span>
-        <strong>Zento</strong>
+    <aside class="auth-aside">
+      <div class="auth-aside-inner">
+        <img class="auth-aside-logo" src="assets/zento-logo-full.png" alt="Zento Online Store">
+        <h2>Shop smarter with Zento.</h2>
+        <ul>
+          <li><svg class="i"><use href="#i-truck"/></svg>Free delivery on orders over ৳100</li>
+          <li><svg class="i"><use href="#i-cash"/></svg>Pay with cash on delivery</li>
+          <li><svg class="i"><use href="#i-return"/></svg>Easy 7-day returns</li>
+        </ul>
       </div>
+    </aside>
 
-      <!-- LOGIN -->
-      <div id="loginForm">
-        <h1>Welcome back</h1>
-        <p>Login to continue shopping</p>
+    <div class="auth-main">
+      <div class="auth-card">
 
-        <form id="loginFormElement">
-          <input type="email" id="loginEmail" placeholder="Gmail address" required>
-          <input type="password" id="loginPassword" placeholder="Password" required>
+        <div class="auth-logo">
+          <img src="assets/zento-logo.png" alt="">
+          <strong>Zento</strong>
+        </div>
 
-          <button type="submit" class="primary-btn">
-            Login
-          </button>
-        </form>
+        <!-- LOGIN -->
+        <div id="loginForm">
+          <h1>Welcome back</h1>
+          <p>Log in to continue shopping</p>
 
-        <p class="auth-switch">
-          Don't have an account?
-          <button type="button" id="showSignup">Sign Up</button>
-        </p>
+          <form id="loginFormElement">
+            <input type="email" id="loginEmail" placeholder="Gmail address" autocomplete="username" required>
+            <input type="password" id="loginPassword" placeholder="Password" autocomplete="current-password" required>
 
-        <p id="loginMessage" class="auth-message"></p>
+            <button type="submit" class="primary-btn">Login</button>
+          </form>
+
+          <p class="auth-switch">
+            Don't have an account?
+            <button type="button" id="showSignup">Sign Up</button>
+          </p>
+
+          <p id="loginMessage" class="auth-message"></p>
+        </div>
+
+        <!-- SIGNUP -->
+        <div id="signupForm" hidden>
+          <h1>Create account</h1>
+          <p>Join Zento and start shopping</p>
+
+          <form id="signupFormElement">
+            <input type="text" id="signupName" placeholder="Your name" autocomplete="name" required>
+            <input type="email" id="signupEmail" placeholder="Gmail address" autocomplete="email" required>
+            <input type="password" id="signupPassword" placeholder="Password (8+ characters)" minlength="8" autocomplete="new-password" required>
+
+            <button type="submit" class="primary-btn">Create Account</button>
+          </form>
+
+          <p class="auth-switch">
+            Already have an account?
+            <button type="button" id="showLogin">Login</button>
+          </p>
+
+          <p id="signupMessage" class="auth-message"></p>
+        </div>
+
       </div>
-
-      <!-- SIGNUP -->
-      <div id="signupForm" hidden>
-        <h1>Create account</h1>
-        <p>Join Zento and start shopping</p>
-
-        <form id="signupFormElement">
-          <input type="text" id="signupName" placeholder="Your name" required>
-          <input type="email" id="signupEmail" placeholder="Gmail address" required>
-          <input type="password" id="signupPassword" placeholder="Password (8+ characters)" minlength="8" required>
-
-          <button type="submit" class="primary-btn">
-            Create Account
-          </button>
-        </form>
-
-        <p class="auth-switch">
-          Already have an account?
-          <button type="button" id="showLogin">Login</button>
-        </p>
-
-        <p id="signupMessage" class="auth-message"></p>
-      </div>
-
     </div>
   </section>
 
   <!-- HEADER -->
   <header class="header">
-    <a href="#" class="logo">
-      <span class="logo-icon">✦</span>
-      <span>Zento</span>
-    </a>
+    <div class="header-inner">
 
-    <button class="header-cart" id="headerCart">
-      🛒
-      <span class="cart-badge" id="headerCartCount">0</span>
-    </button>
+      <a href="#" class="logo" aria-label="Zento Online Store home">
+        <img class="logo-icon" src="assets/zento-logo.png" alt="">
+        <span class="logo-text"><b>Zento</b><small>Online Store</small></span>
+      </a>
+
+      <!-- NAVIGATION (top menu on desktop, tab bar on phones) -->
+      <nav class="bottom-nav" aria-label="Main">
+
+        <a href="#" class="nav-item active" id="homeNav">
+          <svg class="i"><use href="#i-home"/></svg>
+          <small>Home</small>
+        </a>
+
+        <a href="#products" class="nav-item" id="shopNav">
+          <svg class="i"><use href="#i-shop"/></svg>
+          <small>Shop</small>
+        </a>
+
+        <a href="#" class="nav-item cart-nav" id="cartNav">
+          <span class="nav-icon">
+            <svg class="i"><use href="#i-cart"/></svg>
+            <b id="cartCount">0</b>
+          </span>
+          <small>Cart</small>
+        </a>
+
+        <a href="#" class="nav-item" id="profileNav">
+          <svg class="i"><use href="#i-user"/></svg>
+          <small>Profile</small>
+        </a>
+
+      </nav>
+
+      <!-- SEARCH -->
+      <div class="search-section">
+        <div class="search-box">
+          <svg class="i search-icon"><use href="#i-search"/></svg>
+
+          <input
+            type="search"
+            id="searchInput"
+            placeholder="Search products..."
+            autocomplete="off"
+            aria-label="Search products"
+          >
+
+          <button id="clearSearch" class="clear-search" type="button" aria-label="Clear search" hidden>
+            <svg class="i"><use href="#i-close"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <button class="header-cart" id="headerCart" type="button" aria-label="Open cart">
+        <svg class="i"><use href="#i-cart"/></svg>
+        <span class="cart-badge" id="headerCartCount">0</span>
+      </button>
+
+    </div>
   </header>
 
 
-  <!-- SEARCH -->
   <main>
-
-    <section class="search-section">
-      <div class="search-box">
-        <span class="search-icon">⌕</span>
-
-        <input
-          type="search"
-          id="searchInput"
-          placeholder="Search products..."
-          autocomplete="off"
-        >
-
-        <button id="clearSearch" class="clear-search" hidden>
-          ×
-        </button>
-      </div>
-    </section>
-
 
     <!-- HERO -->
     <section class="hero">
 
       <div class="hero-content">
 
-        <span class="hero-label">
-          ✨ NEW COLLECTION
-        </span>
+        <span class="hero-label">Zento Online Store</span>
 
         <h1>
-          Everything you need,
-          <span>one place.</span>
+          Quality products,
+          <span>delivered to your door.</span>
         </h1>
 
         <p>
-          Discover products you'll love at prices
-          you'll love even more.
+          Tech and everyday essentials at fair prices, with fast delivery
+          and simple cash on delivery checkout.
         </p>
 
-        <button class="primary-btn" id="shopNow">
-          Shop Now
-          <span>→</span>
-        </button>
-
-      </div>
-
-      <div class="hero-art">
-        <div class="hero-circle"></div>
-        <div class="hero-bag">🛍️</div>
-        <div class="floating-card card-one">⭐ 4.9</div>
-        <div class="floating-card card-two">🔥 30% OFF</div>
-      </div>
-
-    </section>
-
-
-    <!-- CATEGORIES -->
-    <section class="section">
-
-      <div class="section-heading">
-
-        <div>
-          <h2>Categories</h2>
-          <p>Explore our collections</p>
-        </div>
-
-        <button class="text-btn">
-          View all
-        </button>
-
-      </div>
-
-
-      <div class="categories">
-
-        <button class="category active" data-category="all">
-          <span class="category-icon">✦</span>
-          <span>All</span>
-        </button>
-
-        <button class="category" data-category="electronics">
-          <span class="category-icon">📱</span>
-          <span>Tech</span>
-        </button>
-
-        <button class="category" data-category="fashion">
-          <span class="category-icon">👕</span>
-          <span>Fashion</span>
-        </button>
-
-        <button class="category" data-category="home">
-          <span class="category-icon">🏠</span>
-          <span>Home</span>
-        </button>
-
-        <button class="category" data-category="beauty">
-          <span class="category-icon">✨</span>
-          <span>Beauty</span>
-        </button>
-
-        <button class="category" data-category="sports">
-          <span class="category-icon">⚽</span>
-          <span>Sports</span>
-        </button>
-
-      </div>
-
-    </section>
-
-
-    <!-- FLASH SALE -->
-    <section class="section sale-section">
-
-      <div class="section-heading">
-
-        <div>
-          <h2>🔥 Flash Sale</h2>
-          <p>Limited time offers</p>
-        </div>
-
-        <div class="timer">
-          <span id="hours">02</span>
-          <b>:</b>
-          <span id="minutes">45</span>
-          <b>:</b>
-          <span id="seconds">18</span>
-        </div>
-
-      </div>
-
-
-      <!-- PRODUCT DETAILS MODAL -->
-      <div class="product-modal" id="productModal" aria-hidden="true">
-
-        <div class="product-modal-overlay" data-close-product></div>
-
-        <div class="product-modal-box">
-
-          <button class="product-modal-close" id="closeProductModal" aria-label="Close">
-            ×
+        <div class="hero-actions">
+          <button class="primary-btn" id="shopNow" type="button">
+            Shop Now
+            <svg class="i"><use href="#i-arrow"/></svg>
           </button>
-
-          <div class="modal-product-image" id="modalProductImage">
-            🎧
-          </div>
-
-          <div class="modal-product-content">
-
-            <span class="product-category" id="modalProductCategory">
-              Electronics
-            </span>
-
-            <h2 id="modalProductName">
-              Wireless Headphones
-            </h2>
-
-            <div class="rating" id="modalProductRating">
-              <span>★</span>
-              4.8
-              <small>(124 reviews)</small>
-            </div>
-
-            <div class="modal-price">
-              <strong id="modalProductPrice">৳49.99</strong>
-              <del id="modalProductOldPrice">৳69.99</del>
-            </div>
-
-            <p class="modal-description" id="modalProductDescription">
-              Premium quality product designed for everyday use.
-              Enjoy excellent quality, comfort and a modern design.
-            </p>
-
-            <div class="modal-stock">
-              <span>●</span> In Stock
-            </div>
-
-            <div class="modal-quantity">
-
-              <span>Quantity</span>
-
-              <div class="quantity-control">
-                <button id="modalQtyMinus">−</button>
-                <strong id="modalQty">1</strong>
-                <button id="modalQtyPlus">+</button>
-              </div>
-
-            </div>
-
-            <button class="modal-add-cart" id="modalAddCart">
-              Add to Cart
-            </button>
-
-          </div>
-
+          <span class="hero-note">Free delivery over ৳100</span>
         </div>
 
+      </div>
+
+      <div class="hero-art" aria-hidden="true">
+        <div class="hero-circle"></div>
+        <div class="hero-bag"><img src="assets/zento-logo.png" alt=""></div>
+        <div class="floating-card card-one"><svg class="i"><use href="#i-truck"/></svg>Fast delivery</div>
+        <div class="floating-card card-two"><svg class="i"><use href="#i-cash"/></svg>Cash on delivery</div>
+      </div>
+
+    </section>
+
+
+    <!-- SHOP -->
+    <section class="section shop-section" id="shop">
+
+      <div class="section-heading">
+        <div>
+          <h2>Shop by category</h2>
+          <p>Browse the full Zento collection</p>
+        </div>
+
+        <button class="text-btn" type="button">View all</button>
+      </div>
+
+      <div class="categories" role="group" aria-label="Product categories">
+        <button class="category active" data-category="all" type="button"><span>All</span></button>
       </div>
 
 
       <!-- PRODUCTS -->
       <div class="products" id="products">
 
-        <div id="dynamicProducts"></div>
+        <div id="dynamicProducts">
+          <article class="product-card skeleton" aria-hidden="true"><div class="product-image"></div><div class="product-info"><i></i><i></i><i></i></div></article>
+          <article class="product-card skeleton" aria-hidden="true"><div class="product-image"></div><div class="product-info"><i></i><i></i><i></i></div></article>
+          <article class="product-card skeleton" aria-hidden="true"><div class="product-image"></div><div class="product-info"><i></i><i></i><i></i></div></article>
+          <article class="product-card skeleton" aria-hidden="true"><div class="product-image"></div><div class="product-info"><i></i><i></i><i></i></div></article>
+        </div>
 
-      <!-- NO RESULT -->
-      <div id="noResults" class="no-results" hidden>
-        <div>🔎</div>
-        <h3>No products found</h3>
-        <p>Try another search.</p>
+        <!-- NO RESULT -->
+        <div id="noResults" class="no-results" hidden>
+          <svg class="i"><use href="#i-search"/></svg>
+          <h3>No products found</h3>
+          <p>Try another search or category.</p>
+        </div>
+
       </div>
 
     </section>
@@ -303,23 +253,23 @@
     <section class="trust-section">
 
       <div class="trust-item">
-        <span>🚚</span>
+        <span><svg class="i"><use href="#i-truck"/></svg></span>
         <div>
           <strong>Fast Delivery</strong>
-          <small>Quick & reliable</small>
+          <small>Quick and reliable</small>
         </div>
       </div>
 
       <div class="trust-item">
-        <span>🔒</span>
+        <span><svg class="i"><use href="#i-lock"/></svg></span>
         <div>
-          <strong>Secure Payment</strong>
-          <small>100% protected</small>
+          <strong>Secure Checkout</strong>
+          <small>Your details stay protected</small>
         </div>
       </div>
 
       <div class="trust-item">
-        <span>↩️</span>
+        <span><svg class="i"><use href="#i-return"/></svg></span>
         <div>
           <strong>Easy Returns</strong>
           <small>7-day returns</small>
@@ -331,12 +281,73 @@
   </main>
 
 
+  <footer class="footer">
+    <div class="footer-inner">
+      <a href="#" class="logo" aria-label="Zento Online Store home">
+        <img class="logo-icon" src="assets/zento-logo.png" alt="">
+        <span class="logo-text"><b>Zento</b><small>Online Store</small></span>
+      </a>
+      <p>Quality products, fair prices, delivered to your door.</p>
+      <small>&copy; <span id="footerYear">2026</span> Zento Online Store. All rights reserved.</small>
+    </div>
+  </footer>
+
+
+  <!-- PRODUCT DETAILS MODAL -->
+  <div class="product-modal" id="productModal" aria-hidden="true">
+
+    <div class="product-modal-overlay" data-close-product></div>
+
+    <div class="product-modal-box" role="dialog" aria-modal="true" aria-labelledby="modalProductName">
+
+      <button class="product-modal-close" id="closeProductModal" type="button" aria-label="Close">
+        <svg class="i"><use href="#i-close"/></svg>
+      </button>
+
+      <div class="modal-product-image" id="modalProductImage">🛍️</div>
+
+      <div class="modal-product-content">
+
+        <span class="product-category" id="modalProductCategory">Category</span>
+
+        <h2 id="modalProductName">Product</h2>
+
+        <div class="rating" id="modalProductRating"></div>
+
+        <div class="modal-price">
+          <strong id="modalProductPrice">৳0.00</strong>
+          <del id="modalProductOldPrice"></del>
+        </div>
+
+        <p class="modal-description" id="modalProductDescription"></p>
+
+        <div class="modal-stock"><span>●</span> In Stock</div>
+
+        <div class="modal-quantity">
+          <span>Quantity</span>
+
+          <div class="quantity-control">
+            <button id="modalQtyMinus" type="button" aria-label="Decrease quantity">−</button>
+            <strong id="modalQty">1</strong>
+            <button id="modalQtyPlus" type="button" aria-label="Increase quantity">+</button>
+          </div>
+        </div>
+
+        <button class="modal-add-cart" id="modalAddCart" type="button">Add to Cart</button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
   <!-- CART PAGE -->
   <section class="cart-page" id="cartPage" aria-hidden="true">
 
     <div class="cart-page-header">
-      <button class="cart-back" id="cartBack" aria-label="Back">
-        ←
+      <button class="cart-back" id="cartBack" type="button" aria-label="Back">
+        <svg class="i"><use href="#i-back"/></svg>
       </button>
 
       <div>
@@ -344,22 +355,20 @@
         <h2>Your Cart</h2>
       </div>
 
-      <span class="cart-header-icon">🛒</span>
+      <span class="cart-header-icon"><svg class="i"><use href="#i-cart"/></svg></span>
     </div>
 
     <div class="cart-items" id="cartItems"></div>
 
     <div class="cart-empty" id="cartEmpty">
 
-      <div class="cart-empty-icon">🛒</div>
+      <div class="cart-empty-icon"><svg class="i"><use href="#i-cart"/></svg></div>
 
       <h3>Your cart is empty</h3>
 
       <p>Add something you love and it will appear here.</p>
 
-      <button id="continueShopping">
-        Continue Shopping
-      </button>
+      <button id="continueShopping" type="button">Continue Shopping</button>
 
     </div>
 
@@ -382,9 +391,9 @@
         <strong id="cartTotal">৳0.00</strong>
       </div>
 
-      <button class="checkout-btn" id="checkoutBtn">
+      <button class="checkout-btn" id="checkoutBtn" type="button">
         Proceed to Checkout
-        <span>→</span>
+        <svg class="i"><use href="#i-arrow"/></svg>
       </button>
 
     </div>
@@ -395,12 +404,12 @@
   <!-- CHECKOUT PAGE -->
   <section class="zento-page" id="checkoutPage" aria-hidden="true">
     <div class="zento-page-header">
-      <button type="button" id="checkoutBack" class="zento-back">←</button>
+      <button type="button" id="checkoutBack" class="zento-back" aria-label="Back"><svg class="i"><use href="#i-back"/></svg></button>
       <div>
         <span>Secure order</span>
         <h2>Checkout</h2>
       </div>
-      <span class="zento-page-icon">🧾</span>
+      <span class="zento-page-icon"><svg class="i"><use href="#i-receipt"/></svg></span>
     </div>
 
     <div class="checkout-layout">
@@ -408,7 +417,7 @@
 
         <div class="checkout-section">
           <div class="section-title">
-            <span>01</span>
+            <span>1</span>
             <div>
               <strong>Delivery details</strong>
               <small>Where should we deliver?</small>
@@ -416,15 +425,15 @@
           </div>
 
           <label>Full name
-            <input id="checkoutName" type="text" required placeholder="Your full name">
+            <input id="checkoutName" type="text" required placeholder="Your full name" autocomplete="name">
           </label>
 
           <label>Phone number
-            <input id="checkoutPhone" type="tel" required placeholder="+966 5XXXXXXXX">
+            <input id="checkoutPhone" type="tel" required placeholder="+966 5XXXXXXXX" autocomplete="tel">
           </label>
 
           <label>City
-            <input id="checkoutCity" type="text" placeholder="Riyadh">
+            <input id="checkoutCity" type="text" placeholder="Riyadh" autocomplete="address-level2">
           </label>
 
           <label>Delivery address
@@ -434,113 +443,77 @@
 
         <div class="checkout-section">
           <div class="section-title">
-            <span>02</span>
+            <span>2</span>
             <div>
               <strong>Payment</strong>
-              <small>Simple & secure</small>
+              <small>Simple and secure</small>
             </div>
           </div>
 
           <div class="payment-options" id="paymentOptions">
 
-          <label class="payment-option active">
-            <input
-              type="radio"
-              name="paymentMethod"
-              value="cod"
-              checked
-            >
-            <span class="payment-radio">✓</span>
-            <div>
-              <strong>Cash on Delivery</strong>
-              <small>Pay when your order arrives</small>
-            </div>
-          </label>
+            <label class="payment-option active">
+              <input type="radio" name="paymentMethod" value="cod" checked>
+              <span class="payment-radio"><svg class="i"><use href="#i-check"/></svg></span>
+              <div>
+                <strong>Cash on Delivery</strong>
+                <small>Pay when your order arrives</small>
+              </div>
+            </label>
 
-          <label class="payment-option">
-            <input
-              type="radio"
-              name="paymentMethod"
-              value="card"
-            >
-            <span class="payment-radio">✓</span>
-            <div>
+            <label class="payment-option">
+              <input type="radio" name="paymentMethod" value="card">
+              <span class="payment-radio"><svg class="i"><use href="#i-check"/></svg></span>
+              <div>
+                <strong>Card Payment</strong>
+                <small>Pay securely by card</small>
+              </div>
+            </label>
+
+          </div>
+
+          <div class="card-payment-box" id="cardPaymentBox" hidden>
+
+            <div class="card-payment-note">
               <strong>Card Payment</strong>
-              <small>Pay securely by card</small>
+              <span>Card gateway will be connected soon.</span>
             </div>
-          </label>
-
-        </div>
-
-        <div class="card-payment-box" id="cardPaymentBox" hidden>
-
-          <div class="card-payment-note">
-            <strong>Card Payment</strong>
-            <span>Card gateway will be connected soon.</span>
-          </div>
-
-          <label>
-            Cardholder Name
-            <input
-              type="text"
-              id="cardName"
-              autocomplete="cc-name"
-              placeholder="Name on card"
-            >
-          </label>
-
-          <label>
-            Card Number
-            <input
-              type="text"
-              id="cardNumber"
-              inputmode="numeric"
-              autocomplete="cc-number"
-              maxlength="19"
-              placeholder="1234 5678 9012 3456"
-            >
-          </label>
-
-          <div class="card-row">
 
             <label>
-              Expiry Date
-              <input
-                type="text"
-                id="cardExpiry"
-                inputmode="numeric"
-                autocomplete="cc-exp"
-                maxlength="5"
-                placeholder="MM/YY"
-              >
+              Cardholder Name
+              <input type="text" id="cardName" autocomplete="cc-name" placeholder="Name on card">
             </label>
 
             <label>
-              CVV
-              <input
-                type="password"
-                id="cardCvv"
-                inputmode="numeric"
-                autocomplete="cc-csc"
-                maxlength="4"
-                placeholder="CVV"
-              >
+              Card Number
+              <input type="text" id="cardNumber" inputmode="numeric" autocomplete="cc-number" maxlength="19" placeholder="1234 5678 9012 3456">
             </label>
+
+            <div class="card-row">
+              <label>
+                Expiry Date
+                <input type="text" id="cardExpiry" inputmode="numeric" autocomplete="cc-exp" maxlength="5" placeholder="MM/YY">
+              </label>
+
+              <label>
+                CVV
+                <input type="password" id="cardCvv" inputmode="numeric" autocomplete="cc-csc" maxlength="4" placeholder="CVV">
+              </label>
+            </div>
+
+            <p class="card-gateway-message">
+              Card payments are not active yet. Please select Cash on Delivery to test checkout.
+            </p>
 
           </div>
 
-          <p class="card-gateway-message">
-            Card payments are not active yet. Please select Cash on Delivery to test checkout.
-          </p>
+          <p id="checkoutMessage" class="checkout-message"></p>
 
+          <button class="place-order-btn" type="submit">
+            Place Order
+            <svg class="i"><use href="#i-arrow"/></svg>
+          </button>
         </div>
-
-        <p id="checkoutMessage" class="checkout-message"></p>
-
-        <button class="place-order-btn" type="submit">
-          Place Order
-          <span>→</span>
-        </button>
       </form>
 
       <aside class="checkout-summary-card">
@@ -573,12 +546,12 @@
   <!-- PROFILE PAGE -->
   <section class="zento-page" id="profilePage" aria-hidden="true">
     <div class="zento-page-header">
-      <button type="button" id="profileBack" class="zento-back">←</button>
+      <button type="button" id="profileBack" class="zento-back" aria-label="Back"><svg class="i"><use href="#i-back"/></svg></button>
       <div>
         <span>Your account</span>
         <h2>My Profile</h2>
       </div>
-      <span class="zento-page-icon">♙</span>
+      <span class="zento-page-icon"><svg class="i"><use href="#i-user"/></svg></span>
     </div>
 
     <div class="profile-layout">
@@ -598,11 +571,10 @@
             <span>Personal information</span>
             <h3>Profile details</h3>
           </div>
-          <span>✦</span>
         </div>
 
         <label>Full name
-          <input id="profileName" type="text" required>
+          <input id="profileName" type="text" required autocomplete="name">
         </label>
 
         <label>Email
@@ -610,11 +582,11 @@
         </label>
 
         <label>Phone
-          <input id="profilePhone" type="tel" required placeholder="+966 5XXXXXXXX">
+          <input id="profilePhone" type="tel" required placeholder="+966 5XXXXXXXX" autocomplete="tel">
         </label>
 
         <label>City
-          <input id="profileCity" type="text" placeholder="Riyadh">
+          <input id="profileCity" type="text" placeholder="Riyadh" autocomplete="address-level2">
         </label>
 
         <label>Delivery address
@@ -623,9 +595,7 @@
 
         <p id="profileMessage" class="profile-message"></p>
 
-        <button class="primary-btn profile-save-btn" type="submit">
-          Save Changes
-        </button>
+        <button class="primary-btn profile-save-btn" type="submit">Save Changes</button>
       </form>
 
       <div class="orders-card">
@@ -634,7 +604,6 @@
             <span>Shopping history</span>
             <h3>My Orders</h3>
           </div>
-          <span>📦</span>
         </div>
 
         <div id="ordersList" class="orders-list">
@@ -642,57 +611,20 @@
         </div>
       </div>
 
-      <button type="button" id="logoutBtn" class="logout-btn">
-        Log out
-      </button>
+      <button type="button" id="logoutBtn" class="logout-btn">Log out</button>
 
     </div>
   </section>
 
 
-  <!-- BOTTOM NAVIGATION -->
-  <nav class="bottom-nav">
-
-    <a href="#" class="nav-item active">
-      <span>⌂</span>
-      <small>Home</small>
-    </a>
-
-    <a href="#products" class="nav-item">
-      <span>◉</span>
-      <small>Shop</small>
-    </a>
-
-    <a href="#" class="nav-item cart-nav" id="cartNav">
-      <span>
-        🛒
-        <b id="cartCount">0</b>
-      </span>
-      <small>Cart</small>
-    </a>
-
-    <a href="#" class="nav-item">
-      <span>♡</span>
-      <small>Wishlist</small>
-    </a>
-
-    <a href="#" class="nav-item" id="profileNav">
-      <span>♙</span>
-      <small>Profile</small>
-    </a>
-
-  </nav>
-
-
   <!-- TOAST -->
-  <div id="toast" class="toast">
-    Added to cart 🛒
-  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite">Added to cart</div>
 
 
   <script src="js/dynamic-products.js"></script>
   <script src="js/app.js"></script>
   <script src="js/profile-checkout.js"></script>
+  <script src="js/storefront-ui.js"></script>
 
 </body>
 </html>
