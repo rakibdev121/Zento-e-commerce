@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#0f1013">
+  <meta name="theme-color" content="#0b1736">
   <meta name="description" content="Zento Online Store: quality tech and everyday essentials delivered to your door.">
 
   <title>Zento Online Store</title>
   <link rel="icon" type="image/png" href="assets/zento-logo.png">
+  <script>try{var t=localStorage.getItem("zento_theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -34,6 +35,8 @@
       <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
       <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/></symbol>
       <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></symbol>
       <symbol id="i-cash" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.8"/></symbol>
     </defs>
   </svg>
@@ -54,6 +57,7 @@
     </aside>
 
     <div class="auth-main">
+      <button type="button" class="theme-btn auth-theme" data-theme-toggle aria-label="Switch light or dark theme"><svg class="i i-moon"><use href="#i-moon"/></svg><svg class="i i-sun"><use href="#i-sun"/></svg></button>
       <div class="auth-card">
 
         <div class="auth-logo">
@@ -162,10 +166,13 @@
         </div>
       </div>
 
-      <button class="header-cart" id="headerCart" type="button" aria-label="Open cart">
-        <svg class="i"><use href="#i-cart"/></svg>
-        <span class="cart-badge" id="headerCartCount">0</span>
-      </button>
+      <div class="header-actions">
+        <button type="button" class="theme-btn " data-theme-toggle aria-label="Switch light or dark theme"><svg class="i i-moon"><use href="#i-moon"/></svg><svg class="i i-sun"><use href="#i-sun"/></svg></button>
+        <button class="header-cart" id="headerCart" type="button" aria-label="Open cart">
+          <svg class="i"><use href="#i-cart"/></svg>
+          <span class="cart-badge" id="headerCartCount">0</span>
+        </button>
+      </div>
 
     </div>
   </header>
