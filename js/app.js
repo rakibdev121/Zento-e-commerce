@@ -603,6 +603,7 @@ document.addEventListener("DOMContentLoaded", () => {
         ...document.querySelectorAll(".product-card")
       ];
 
+      buildCategoryChips();
       syncWishlistButtons();
       filterProducts();
     }
@@ -687,27 +688,60 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ---------- CATEGORY FILTER ---------- */
 
-  categories.forEach(category => {
+  document
+    .querySelector(".categories")
+    ?.addEventListener("click", event => {
 
-    category.addEventListener(
-      "click",
-      () => {
+      const chip = event.target.closest(".category");
 
-        categories.forEach(item => {
-          item.classList.remove("active");
-        });
+      if (!chip) return;
 
-        category.classList.add("active");
+      document.querySelectorAll(".category").forEach(item => {
+        item.classList.remove("active");
+      });
 
-        selectedCategory =
-          category.dataset.category ||
-          "all";
+      chip.classList.add("active");
 
-        filterProducts();
+      selectedCategory =
+        chip.dataset.category ||
+        "all";
+
+      filterProducts();
+    });
+
+  /* Build category chips from the products that really exist */
+  function buildCategoryChips() {
+
+    const wrap = document.querySelector(".categories");
+
+    if (!wrap) return;
+
+    const seen = new Map();
+
+    document.querySelectorAll(".product-card").forEach(card => {
+      const key = card.dataset.category;
+
+      if (key && !seen.has(key)) {
+        seen.set(
+          key,
+          card.querySelector(".product-category")?.textContent.trim() || key
+        );
       }
-    );
+    });
 
-  });
+    const safe = value =>
+      String(value).replace(/[&<>"']/g, c => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+
+    wrap.innerHTML =
+      `<button class="category active" data-category="all" type="button"><span>All</span></button>` +
+      [...seen].map(([key, label]) =>
+        `<button class="category" data-category="${safe(key)}" type="button"><span>${safe(label)}</span></button>`
+      ).join("");
+
+    selectedCategory = "all";
+  }
 
   /* ---------- VIEW ALL ---------- */
 
@@ -717,7 +751,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       selectedCategory = "all";
 
-      categories.forEach(item => {
+      document.querySelectorAll(".category").forEach(item => {
         item.classList.toggle(
           "active",
           item.dataset.category === "all"

@@ -65,8 +65,8 @@ async function loadZentoProducts() {
 
           <div class="product-top">
 
-            <span class="discount">
-              NEW
+            <span class="discount ${stock <= 0 ? "sold" : stock <= 5 ? "" : "none"}">
+              ${stock <= 0 ? "Sold out" : stock <= 5 ? `Only ${stock} left` : ""}
             </span>
 
             <button
@@ -101,9 +101,8 @@ async function loadZentoProducts() {
               ${safeName}
             </h3>
 
-            <div class="rating">
-              <span>★</span>
-              <span>${escapeZentoHtml(stockText)}</span>
+            <div class="stock-line ${stock <= 0 ? "out" : stock <= 5 ? "low" : ""}">
+              ${escapeZentoHtml(stockText)}
             </div>
 
             <div class="price-row">
