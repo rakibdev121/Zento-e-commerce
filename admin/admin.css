@@ -1561,3 +1561,224 @@ a{
     display:none!important;
   }
 }
+
+
+/* =========================================================
+   FINAL MOBILE POLISH
+========================================================= */
+
+@media (max-width: 700px){
+
+  html,
+  body{
+    width:100%;
+    max-width:100%;
+    overflow-x:hidden;
+  }
+
+  .admin-app{
+    width:100%;
+    min-width:0;
+  }
+
+  .main-content{
+    width:100%;
+    min-width:0;
+    margin-left:0 !important;
+    padding:0 !important;
+  }
+
+  .topbar{
+    min-height:72px;
+    height:auto;
+    padding:12px 14px !important;
+    gap:10px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+
+  .breadcrumb{
+    min-width:0;
+    flex:1;
+  }
+
+  .breadcrumb-small{
+    display:none !important;
+  }
+
+  .page-title{
+    font-size:24px !important;
+    line-height:1.15;
+    margin:4px 0 0;
+  }
+
+  .admin-profile{
+    max-width:110px;
+    min-width:0;
+    overflow:hidden;
+  }
+
+  .admin-profile-name,
+  .admin-profile-role{
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+
+  .admin-profile-role{
+    display:none;
+  }
+
+  .dashboard-page,
+  .page{
+    width:100%;
+    min-width:0;
+  }
+
+  .page-content{
+    padding:14px !important;
+  }
+
+  .welcome-card{
+    min-height:0 !important;
+    padding:24px 22px !important;
+    border-radius:22px !important;
+  }
+
+  .welcome-card h2{
+    font-size:28px !important;
+    line-height:1.1;
+  }
+
+  .welcome-card p{
+    font-size:16px !important;
+    line-height:1.45;
+  }
+
+  .stats-grid{
+    display:grid !important;
+    grid-template-columns:1fr !important;
+    gap:14px !important;
+    margin-top:14px;
+  }
+
+  .stat-card{
+    min-height:130px !important;
+    height:auto !important;
+    padding:20px !important;
+    border-radius:20px !important;
+  }
+
+  .stat-card h3,
+  .stat-card .stat-value{
+    font-size:30px !important;
+    margin:8px 0 2px !important;
+  }
+
+  .stat-card p{
+    font-size:15px !important;
+  }
+
+  .dashboard-grid,
+  .content-grid,
+  .two-column,
+  .quick-actions{
+    grid-template-columns:1fr !important;
+  }
+
+  .panel{
+    width:100%;
+    min-width:0;
+    overflow:hidden;
+  }
+
+  .table-wrap{
+    width:100%;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .product-table,
+  .orders-table{
+    min-width:650px;
+  }
+
+  .login-screen{
+    padding:14px !important;
+  }
+
+  .login-card{
+    width:100% !important;
+    max-width:430px !important;
+    padding:24px 18px !important;
+  }
+
+  .login-card h1{
+    font-size:30px !important;
+  }
+
+  .login-card label{
+    display:block;
+    width:100%;
+  }
+
+  .login-card input{
+    width:100% !important;
+    box-sizing:border-box;
+  }
+
+  .login-btn{
+    width:100%;
+  }
+
+}
+
+@media (max-width:480px){
+
+  .topbar{
+    min-height:68px;
+    padding:10px 12px !important;
+  }
+
+  .page-title{
+    font-size:22px !important;
+  }
+
+  .admin-profile{
+    max-width:82px;
+  }
+
+  .admin-profile-name{
+    font-size:13px !important;
+  }
+
+  .welcome-card{
+    padding:20px 18px !important;
+    border-radius:18px !important;
+  }
+
+  .welcome-card h2{
+    font-size:25px !important;
+  }
+
+  .welcome-card p{
+    font-size:15px !important;
+  }
+
+  .stat-card{
+    min-height:115px !important;
+    padding:17px !important;
+    border-radius:18px !important;
+  }
+
+  .stat-card h3,
+  .stat-card .stat-value{
+    font-size:27px !important;
+  }
+
+  .page-content{
+    padding:10px !important;
+  }
+
+}
