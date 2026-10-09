@@ -274,7 +274,7 @@ async function checkAdminSession() {
 }
 
 function showLoginScreen() {
-  const login = $("adminLoginScreen");
+  const login = $("loginScreen");
   const app = $("adminApp");
 
   if (login) {
@@ -288,7 +288,7 @@ function showLoginScreen() {
 }
 
 function showAdminApp() {
-  const login = $("adminLoginScreen");
+  const login = $("loginScreen");
   const app = $("adminApp");
 
   if (login) {
