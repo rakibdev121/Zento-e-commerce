@@ -3,129 +3,331 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Zento Admin Panel</title>
+  <title>Zento Admin Dashboard</title>
   <link rel="stylesheet" href="admin.css">
 </head>
+
 <body>
 
-  <div id="loginScreen" class="login-screen">
-    <div class="login-card">
-      <div class="login-logo">ZENTO</div>
-      <h1>Admin Login</h1>
-      <p>Sign in to manage your store</p>
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <div class="login-brand">ZENTO</div>
+    <h1>Admin Login</h1>
+    <p>Sign in to manage your store</p>
 
-      <form id="adminLoginForm">
-        <label>
-          Email
-          <input id="adminEmail" type="email" placeholder="Admin email" required>
-        </label>
+    <form id="adminLoginForm">
+      <label>
+        Email
+        <input id="adminEmail" type="email" placeholder="Admin email" required>
+      </label>
 
-        <label>
-          Password
-          <input id="adminPassword" type="password" placeholder="Password" required>
-        </label>
+      <label>
+        Password
+        <input id="adminPassword" type="password" placeholder="Password" required>
+      </label>
 
-        <button type="submit" class="primary-btn login-btn">
-          Login
-        </button>
+      <button class="primary-btn login-btn" type="submit">
+        Login
+      </button>
 
-        <div id="loginError" class="login-error"></div>
-      </form>
-    </div>
+      <div id="loginError" class="login-error"></div>
+    </form>
   </div>
+</div>
 
-  <div id="adminApp" class="admin-app">
+
+<div id="adminApp">
 
   <aside class="sidebar">
-    <div class="logo">ZENTO</div>
+
+    <div class="sidebar-brand">
+      <div class="brand-mark">Z</div>
+      <div>
+        <strong>ZENTO</strong>
+        <small>ADMIN PANEL</small>
+      </div>
+    </div>
+
+    <div class="menu-title">MAIN MENU</div>
 
     <nav>
-      <button class="nav-item active" data-page="dashboard">📊 Dashboard</button>
-      <button class="nav-item" data-page="products">📦 Products</button>
-      <button class="nav-item" data-page="orders">🛒 Orders</button>
-      <button class="nav-item" data-page="customers">👥 Customers</button>
-      <button class="nav-item" data-page="categories">🏷️ Categories</button>
-      <button class="nav-item" data-page="settings">⚙️ Settings</button>
+
+      <button class="nav-item active" data-page="dashboard">
+        <span>▦</span>
+        Dashboard
+      </button>
+
+      <button class="nav-item" data-page="products">
+        <span>◈</span>
+        Products
+      </button>
+
+      <button class="nav-item" data-page="orders">
+        <span>▣</span>
+        Orders
+      </button>
+
+      <button class="nav-item" data-page="customers">
+        <span>♙</span>
+        Customers
+      </button>
+
+      <button class="nav-item" data-page="categories">
+        <span>◇</span>
+        Categories
+      </button>
+
     </nav>
 
-    <button id="logoutBtn" class="logout">🚪 Logout</button>
-  </aside>
+    <div class="menu-title settings-title">SYSTEM</div>
 
-  <main class="main-content">
+    <nav>
 
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">ZENTO STORE</p>
-        <h1 id="pageTitle">Dashboard</h1>
-      </div>
+      <button class="nav-item" data-page="settings">
+        <span>⚙</span>
+        Settings
+      </button>
 
-      <div class="admin-profile">
-        <span>👤</span>
+    </nav>
+
+    <div class="sidebar-bottom">
+
+      <div class="admin-mini">
+        <div class="avatar">A</div>
+
         <div>
           <strong>Admin</strong>
           <small>Administrator</small>
         </div>
       </div>
+
+      <button id="logoutBtn" class="logout-btn">
+        Logout
+      </button>
+
+    </div>
+
+  </aside>
+
+
+  <main class="main-content">
+
+    <header class="topbar">
+
+      <div>
+        <div class="breadcrumb">
+          ZENTO / <span id="breadcrumbText">Dashboard</span>
+        </div>
+
+        <h1 id="pageTitle">Dashboard</h1>
+      </div>
+
+      <div class="top-actions">
+
+        <button id="refreshDashboard" class="icon-btn" title="Refresh">
+          ↻
+        </button>
+
+        <div class="top-admin">
+          <div class="avatar">A</div>
+
+          <div>
+            <strong>Admin</strong>
+            <small>Administrator</small>
+          </div>
+        </div>
+
+      </div>
+
     </header>
 
+
+    <!-- DASHBOARD -->
+
     <section id="dashboardPage" class="page active">
+
+      <div class="welcome-card">
+
+        <div>
+          <span class="welcome-label">WELCOME BACK</span>
+          <h2>Store Overview</h2>
+          <p>Here is what's happening with your Zento store today.</p>
+        </div>
+
+        <div class="welcome-icon">
+          Z
+        </div>
+
+      </div>
+
+
       <div class="stats-grid">
-        <div class="stat-card">
-          <span>📦</span>
-          <p>Total Products</p>
-          <h2 id="totalProducts">0</h2>
-        </div>
 
         <div class="stat-card">
-          <span>🛒</span>
-          <p>Total Orders</p>
-          <h2 id="totalOrders">0</h2>
-        </div>
 
-        <div class="stat-card">
-          <span>👥</span>
-          <p>Customers</p>
-          <h2 id="totalCustomers">0</h2>
-        </div>
-
-        <div class="stat-card">
-          <span>💰</span>
-          <p>Total Sales</p>
-          <h2 id="totalSales">৳0</h2>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-header">
-          <div>
-            <h2>Recent Orders</h2>
-            <p>Latest orders from your store</p>
+          <div class="stat-top">
+            <div class="stat-icon products-icon">◈</div>
+            <span class="stat-label">PRODUCTS</span>
           </div>
+
+          <h2 id="totalProducts">0</h2>
+          <p>Total products in store</p>
+
         </div>
 
-        <div id="recentOrders" class="empty-state">
-          No orders yet.
+
+        <div class="stat-card">
+
+          <div class="stat-top">
+            <div class="stat-icon orders-icon">▣</div>
+            <span class="stat-label">ORDERS</span>
+          </div>
+
+          <h2 id="totalOrders">0</h2>
+          <p>Total customer orders</p>
+
         </div>
+
+
+        <div class="stat-card">
+
+          <div class="stat-top">
+            <div class="stat-icon customers-icon">♙</div>
+            <span class="stat-label">CUSTOMERS</span>
+          </div>
+
+          <h2 id="totalCustomers">0</h2>
+          <p>Registered customers</p>
+
+        </div>
+
+
+        <div class="stat-card">
+
+          <div class="stat-top">
+            <div class="stat-icon sales-icon">৳</div>
+            <span class="stat-label">SALES</span>
+          </div>
+
+          <h2 id="totalSales">৳0</h2>
+          <p>Approved order sales</p>
+
+        </div>
+
       </div>
+
+
+      <div class="dashboard-grid">
+
+        <div class="panel recent-panel">
+
+          <div class="panel-header">
+
+            <div>
+              <h2>Recent Orders</h2>
+              <p>Latest orders from your customers</p>
+            </div>
+
+            <button class="small-btn" data-page-link="orders">
+              View All
+            </button>
+
+          </div>
+
+          <div id="recentOrders" class="recent-orders">
+            Loading...
+          </div>
+
+        </div>
+
+
+        <div class="panel quick-panel">
+
+          <div class="panel-header">
+            <div>
+              <h2>Quick Actions</h2>
+              <p>Manage your store</p>
+            </div>
+          </div>
+
+          <button class="quick-action" id="quickAddProduct">
+            <span>＋</span>
+            <div>
+              <strong>Add Product</strong>
+              <small>Create a new product</small>
+            </div>
+          </button>
+
+          <button class="quick-action" data-page-link="orders">
+            <span>▣</span>
+            <div>
+              <strong>Manage Orders</strong>
+              <small>Approve and track orders</small>
+            </div>
+          </button>
+
+          <button class="quick-action" data-page-link="products">
+            <span>◈</span>
+            <div>
+              <strong>View Products</strong>
+              <small>Manage your inventory</small>
+            </div>
+          </button>
+
+        </div>
+
+      </div>
+
     </section>
 
+
+    <!-- PRODUCTS -->
+
     <section id="productsPage" class="page">
+
       <div class="panel">
+
         <div class="panel-header">
+
           <div>
             <h2>Products</h2>
-            <p>Manage your Zento products</p>
+            <p>Manage products and inventory</p>
           </div>
-          <button id="addProductBtn" class="primary-btn">+ Add Product</button>
+
+          <button id="addProductBtn" class="primary-btn">
+            + Add Product
+          </button>
+
         </div>
 
-        <div id="productsList" class="empty-state">
+        <div id="productsList">
           Loading products...
         </div>
 
-        <div id="productFormWrap" class="product-form-wrap" style="display:none;">
-          <form id="productForm" class="settings-form">
-            <input type="hidden" id="productId">
+      </div>
+
+
+      <div id="productFormWrap" class="panel product-form-panel" style="display:none;">
+
+        <div class="panel-header">
+
+          <div>
+            <h2 id="productFormTitle">Add Product</h2>
+            <p>Create or edit a Zento product</p>
+          </div>
+
+          <button id="cancelProductBtn" class="close-btn">
+            ×
+          </button>
+
+        </div>
+
+
+        <form id="productForm" class="product-form">
+
+          <input type="hidden" id="productId">
+
+          <div class="form-grid">
 
             <label>
               Product Name
@@ -133,23 +335,13 @@
             </label>
 
             <label>
+              Price (BDT)
+              <input id="productPrice" type="number" min="0" step="0.01" required>
+            </label>
+
+            <label class="full">
               Description
               <textarea id="productDescription" rows="4"></textarea>
-            </label>
-
-            <label>
-              Price
-              <input id="productPrice" type="number" step="0.01" min="0" required>
-            </label>
-
-            <label>
-              Image URL
-              <input id="productImage" type="url" placeholder="Image URL (optional)">
-              <div class="image-upload-box">
-                <input id="productImageFile" type="file" accept="image/*">
-                <small>অথবা সরাসরি image URL দিন</small>
-                <img id="productImagePreview" class="product-image-preview" alt="Image preview">
-              </div>
             </label>
 
             <label>
@@ -162,103 +354,173 @@
               <input id="productStock" type="number" min="0" value="0">
             </label>
 
-            <div>
-              <button type="submit" class="primary-btn">Save Product</button>
-              <button type="button" id="cancelProductBtn" class="primary-btn">Cancel</button>
-            </div>
+            <label class="full">
+              Image URL
+              <input id="productImage" type="url" placeholder="https://...">
 
-            <div id="productFormMessage"></div>
-          </form>
-        </div>
+              <div class="image-upload-box">
+
+                <input id="productImageFile" type="file" accept="image/*">
+
+                <small>
+                  Or upload an image from your device
+                </small>
+
+                <img id="productImagePreview" alt="Preview">
+
+              </div>
+
+            </label>
+
+          </div>
+
+          <div class="form-actions">
+
+            <button type="submit" class="primary-btn">
+              Save Product
+            </button>
+
+            <button type="button" id="cancelProductBtn2" class="secondary-btn">
+              Cancel
+            </button>
+
+          </div>
+
+          <div id="productFormMessage"></div>
+
+        </form>
+
       </div>
+
     </section>
+
+
+    <!-- ORDERS -->
 
     <section id="ordersPage" class="page">
+
       <div class="panel">
+
         <div class="panel-header">
+
           <div>
             <h2>Orders</h2>
-            <p>Manage, approve and track customer orders</p>
+            <p>Approve, manage and track customer orders</p>
           </div>
 
-          <button id="refreshOrdersBtn" class="primary-btn">
-            ↻ Refresh Orders
+          <button id="refreshOrdersBtn" class="secondary-btn">
+            ↻ Refresh
           </button>
+
         </div>
 
-        <div id="ordersMessage" class="order-admin-message"></div>
+        <div id="ordersMessage"></div>
 
-        <div id="ordersList" class="admin-orders-list">
+        <div id="ordersList">
           Loading orders...
         </div>
+
       </div>
+
     </section>
 
+
+    <!-- CUSTOMERS -->
+
     <section id="customersPage" class="page">
+
       <div class="panel">
+
         <div class="panel-header">
+
           <div>
             <h2>Customers</h2>
-            <p>Manage your customers</p>
+            <p>Registered Zento customers</p>
           </div>
+
         </div>
 
         <div id="customersList" class="empty-state">
-          No customers loaded yet.
+          Loading customers...
         </div>
+
       </div>
+
     </section>
+
+
+    <!-- CATEGORIES -->
 
     <section id="categoriesPage" class="page">
+
       <div class="panel">
+
         <div class="panel-header">
+
           <div>
             <h2>Categories</h2>
-            <p>Manage product categories</p>
+            <p>Product categories</p>
           </div>
-          <button class="primary-btn">+ Add Category</button>
+
         </div>
 
-        <div id="categoriesList" class="empty-state">
-          No categories loaded yet.
+        <div id="categoriesList" class="category-grid">
+          Loading categories...
         </div>
+
       </div>
+
     </section>
 
+
+    <!-- SETTINGS -->
+
     <section id="settingsPage" class="page">
+
       <div class="panel">
+
         <div class="panel-header">
+
           <div>
             <h2>Store Settings</h2>
-            <p>Manage basic store settings</p>
+            <p>Basic Zento store settings</p>
           </div>
+
         </div>
 
         <div class="settings-form">
+
           <label>
             Store Name
-            <input type="text" value="Zento">
+            <input id="storeName" value="Zento">
           </label>
 
           <label>
             Currency
-            <input type="text" value="BDT">
+            <input value="BDT / ৳" readonly>
           </label>
 
           <label>
             Delivery Charge
-            <input type="number" value="0">
+            <input id="deliveryCharge" type="number" value="0">
           </label>
 
-          <button class="primary-btn">Save Settings</button>
+          <button class="primary-btn">
+            Save Settings
+          </button>
+
         </div>
+
       </div>
+
     </section>
 
   </main>
 
-  </div>
+</div>
 
-  <script type="module" src="admin.js"></script>
+
+<script type="module" src="admin.js"></script>
+
 </body>
 </html>
