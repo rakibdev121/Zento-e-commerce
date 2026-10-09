@@ -390,7 +390,7 @@ async function navigateTo(pageName) {
     page.classList.remove("active");
   });
 
-  const targetPage = $(`page-${pageName}`);
+  const targetPage = $(`page-${pageName}`) || $(`${pageName}Page`);
 
   if (targetPage) {
     targetPage.classList.add("active");
