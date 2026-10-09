@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Zento Admin Dashboard</title>
-  <link rel="stylesheet" href="admin.css?v=20261009-4">
+  <link rel="stylesheet" href="admin.css?v=20261009-5">
 </head>
 
 <body>
@@ -146,142 +146,143 @@
 
     <section id="dashboardPage" class="page active">
 
-      <div class="welcome-card">
+  <div class="z-dashboard-head">
+    <div>
+      <span class="z-eyebrow">STORE OVERVIEW</span>
+      <h1>Dashboard</h1>
+      <p>Monitor your Zento store, orders and customers.</p>
+    </div>
+    <button class="btn btn-primary" id="quickAddProduct">＋ Add Product</button>
+  </div>
 
+  <div class="z-stat-grid">
+
+    <div class="z-stat-card">
+      <div class="z-stat-icon">◈</div>
+      <div>
+        <span>PRODUCTS</span>
+        <strong id="totalProducts">0</strong>
+        <small>Total products in store</small>
+      </div>
+    </div>
+
+    <div class="z-stat-card">
+      <div class="z-stat-icon">▣</div>
+      <div>
+        <span>ORDERS</span>
+        <strong id="totalOrders">0</strong>
+        <small>Total customer orders</small>
+      </div>
+    </div>
+
+    <div class="z-stat-card">
+      <div class="z-stat-icon">♙</div>
+      <div>
+        <span>CUSTOMERS</span>
+        <strong id="totalCustomers">0</strong>
+        <small>Registered customers</small>
+      </div>
+    </div>
+
+    <div class="z-stat-card">
+      <div class="z-stat-icon">৳</div>
+      <div>
+        <span>SALES</span>
+        <strong id="totalSales">৳0</strong>
+        <small>Approved order sales</small>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="z-main-grid">
+
+    <div class="z-panel z-sales-panel">
+      <div class="z-panel-head">
         <div>
-          <span class="welcome-label">WELCOME BACK</span>
-          <h2>Store Overview</h2>
-          <p>Here is what's happening with your Zento store today.</p>
+          <h2>Sales Overview</h2>
+          <p>Your store performance</p>
         </div>
-
-        <div class="welcome-icon">
-          Z
-        </div>
-
+        <span class="z-period">Current</span>
       </div>
 
+      <div class="z-sales-number" id="dashboardSalesValue">৳0</div>
 
-      <div class="stats-grid">
-
-        <div class="stat-card">
-
-          <div class="stat-top">
-            <div class="stat-icon products-icon">◈</div>
-            <span class="stat-label">PRODUCTS</span>
-          </div>
-
-          <h2 id="totalProducts">0</h2>
-          <p>Total products in store</p>
-
+      <div class="z-chart">
+        <div class="z-chart-grid"></div>
+        <div class="z-chart-line">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
         </div>
+      </div>
+    </div>
 
-
-        <div class="stat-card">
-
-          <div class="stat-top">
-            <div class="stat-icon orders-icon">▣</div>
-            <span class="stat-label">ORDERS</span>
-          </div>
-
-          <h2 id="totalOrders">0</h2>
-          <p>Total customer orders</p>
-
+    <div class="z-panel">
+      <div class="z-panel-head">
+        <div>
+          <h2>Quick Actions</h2>
+          <p>Manage your store</p>
         </div>
-
-
-        <div class="stat-card">
-
-          <div class="stat-top">
-            <div class="stat-icon customers-icon">♙</div>
-            <span class="stat-label">CUSTOMERS</span>
-          </div>
-
-          <h2 id="totalCustomers">0</h2>
-          <p>Registered customers</p>
-
-        </div>
-
-
-        <div class="stat-card">
-
-          <div class="stat-top">
-            <div class="stat-icon sales-icon">৳</div>
-            <span class="stat-label">SALES</span>
-          </div>
-
-          <h2 id="totalSales">৳0</h2>
-          <p>Approved order sales</p>
-
-        </div>
-
       </div>
 
+      <div class="z-quick-list">
+        <button class="z-quick" id="quickAddProduct2">
+          <b>＋</b>
+          <span><strong>Add Product</strong><small>Create a new product</small></span>
+          <em>›</em>
+        </button>
 
-      <div class="dashboard-grid">
+        <button class="z-quick" data-page-link="orders">
+          <b>▣</b>
+          <span><strong>Manage Orders</strong><small>Approve and track orders</small></span>
+          <em>›</em>
+        </button>
 
-        <div class="panel recent-panel">
+        <button class="z-quick" data-page-link="products">
+          <b>◈</b>
+          <span><strong>View Products</strong><small>Manage your inventory</small></span>
+          <em>›</em>
+        </button>
+      </div>
+    </div>
 
-          <div class="panel-header">
+  </div>
 
-            <div>
-              <h2>Recent Orders</h2>
-              <p>Latest orders from your customers</p>
-            </div>
+  <div class="z-bottom-grid">
 
-            <button class="small-btn" data-page-link="orders">
-              View All
-            </button>
-
-          </div>
-
-          <div id="recentOrders" class="recent-orders">
-            Loading...
-          </div>
-
+    <div class="z-panel">
+      <div class="z-panel-head">
+        <div>
+          <h2>Recent Orders</h2>
+          <p>Latest orders from your customers</p>
         </div>
-
-
-        <div class="panel quick-panel">
-
-          <div class="panel-header">
-            <div>
-              <h2>Quick Actions</h2>
-              <p>Manage your store</p>
-            </div>
-          </div>
-
-          <button class="quick-action" id="quickAddProduct">
-            <span>＋</span>
-            <div>
-              <strong>Add Product</strong>
-              <small>Create a new product</small>
-            </div>
-          </button>
-
-          <button class="quick-action" data-page-link="orders">
-            <span>▣</span>
-            <div>
-              <strong>Manage Orders</strong>
-              <small>Approve and track orders</small>
-            </div>
-          </button>
-
-          <button class="quick-action" data-page-link="products">
-            <span>◈</span>
-            <div>
-              <strong>View Products</strong>
-              <small>Manage your inventory</small>
-            </div>
-          </button>
-
-        </div>
-
+        <button class="small-btn" data-page-link="orders">View All</button>
       </div>
 
-    </section>
+      <div id="recentOrders" class="recent-orders">
+        Loading...
+      </div>
+    </div>
 
+    <div class="z-panel">
+      <div class="z-panel-head">
+        <div>
+          <h2>Store Health</h2>
+          <p>Quick overview</p>
+        </div>
+      </div>
 
-    <!-- PRODUCTS -->
+      <div class="z-health-list">
+        <div><span class="z-health-dot"></span><b>Products</b><small>Inventory connected</small></div>
+        <div><span class="z-health-dot"></span><b>Orders</b><small>Order management active</small></div>
+        <div><span class="z-health-dot"></span><b>Customers</b><small>Customer data connected</small></div>
+      </div>
+    </div>
+
+  </div>
+
+</section>
+
+<!-- PRODUCTS -->
 
     <section id="productsPage" class="page">
 
@@ -520,7 +521,7 @@
 </div>
 
 
-<script type="module" src="admin.js?v=20261009-4"></script>
+<script type="module" src="admin.js?v=20261009-5"></script>
 
 </body>
 </html>

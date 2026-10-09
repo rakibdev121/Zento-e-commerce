@@ -1670,6 +1670,7 @@ window.onload = function(){
 ========================================================= */
 
 async function loadDashboard() {
+  setupDashboardQuickActions();
   try {
     const [
       productResult,
@@ -1784,6 +1785,28 @@ function updateDashboardStats() {
     "totalSales",
     formatPrice(totalSales)
   );
+
+  setText(
+    "dashboardSalesValue",
+    formatPrice(totalSales)
+  );
+}
+
+function setupDashboardQuickActions() {
+  const addButtons = [
+    $("quickAddProduct"),
+    $("quickAddProduct2")
+  ];
+
+  addButtons.forEach((button) => {
+    if (!button || button.dataset.bound === "true") return;
+
+    button.dataset.bound = "true";
+
+    button.addEventListener("click", () => {
+      navigateTo("products");
+    });
+  });
 }
 
 function setText(id, value) {
