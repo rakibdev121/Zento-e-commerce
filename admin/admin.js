@@ -62,11 +62,19 @@ async function api(path, options = {}) {
   if (!headers["Content-Type"] && options.body) headers["Content-Type"] = "application/json";
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
+  /* Product create / edit / delete need the server's admin API key */
+  const isProductWrite = path.startsWith("/api/products") && options.method && options.method !== "GET";
+  if (isProductWrite) {
+    const key = store.get("zento_admin_api_key", "");
+    if (!key) throw new Error("Admin API key missing. Open Settings, enter the ADMIN_API_TOKEN from Render and save.");
+    if (key) headers["X-Admin-Token"] = key;
+  }
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   let data = {};
   try { data = await res.json(); } catch {}
   if (!res.ok) {
-    const err = new Error(data?.message || data?.error || `Request failed (${res.status})`);
+    if (isProductWrite && res.status === 401) store.set("zento_admin_api_key", "");
+    const err = new Error(res.status === 401 && isProductWrite ? "Wrong Admin API key. Open Settings and enter the correct ADMIN_API_TOKEN from Render." : (data?.message || data?.error || `Request failed (${res.status})`));
     err.status = res.status;
     throw err;
   }
@@ -393,6 +401,7 @@ function vSettings() {
     <label class="full">Store name<input id="storeName" value="${esc(store.get("zento_store_name", "Zento"))}"></label>
     <label>Currency<input value="BDT / ৳" readonly></label>
     <label>Delivery charge<input id="deliveryCharge" type="number" min="0" value="${esc(store.get("zento_delivery_charge", ""))}"></label>
+    <label class="full">Admin API key (needed to add, edit and delete products)<input id="apiKey" type="password" autocomplete="off" placeholder="ADMIN_API_TOKEN from Render" value="${esc(store.get("zento_admin_api_key", ""))}"></label>
     <label class="full">Low stock alert at (units or fewer)<input id="lowLimit" type="number" min="0" value="${lowLimit()}"></label>
     <div class="full"><button class="btn btn-primary" type="submit">Save Settings</button></div>
   </form></section>`;
@@ -454,6 +463,7 @@ function wire() {
     store.set("zento_store_name", $("#storeName").value.trim());
     store.set("zento_delivery_charge", $("#deliveryCharge").value);
     store.set("zento_low_stock_threshold", String(Math.max(0, Number($("#lowLimit").value) || 0)));
+    store.set("zento_admin_api_key", $("#apiKey").value.trim());
     updateBell(); toast("Settings saved.");
   });
 }
