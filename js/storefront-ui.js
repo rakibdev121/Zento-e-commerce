@@ -1,3 +1,6 @@
+/* Android app: native shell handles system bar spacing */
+if (/ZentoApp/.test(navigator.userAgent)) document.documentElement.classList.add("in-app");
+
 /* =========================================
    ZENTO - STOREFRONT UI HELPERS
    Visual-only behaviour: footer year and the
