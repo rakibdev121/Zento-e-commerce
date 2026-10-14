@@ -57,6 +57,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function syncMeta() {
     if (meta) meta.setAttribute("content", isDark() ? "#080e1f" : "#0b1736");
+
+    /* Android app: match the status bar to the active theme */
+    try {
+      if (window.ZentoNative && window.ZentoNative.setTheme) {
+        window.ZentoNative.setTheme(isDark() ? "dark" : "light");
+      }
+    } catch (error) {}
   }
 
   document.addEventListener("click", event => {
@@ -77,3 +84,40 @@ document.addEventListener("DOMContentLoaded", () => {
   syncMeta();
 
 })();
+
+
+/* =========================================
+   ANDROID APP BACK BUTTON
+   The Android app asks the website to close the
+   top-most screen first. Returns true when it did.
+========================================= */
+
+window.zentoHandleBack = function () {
+
+  const screens = [
+    ["productModal", "closeProductModal"],
+    ["checkoutPage", "checkoutBack"],
+    ["profilePage", "profileBack"],
+    ["cartPage", "cartBack"]
+  ];
+
+  for (const [screenId, buttonId] of screens) {
+    const screen = document.getElementById(screenId);
+
+    if (screen && screen.classList.contains("active")) {
+      const button = document.getElementById(buttonId);
+      if (button) button.click();
+      return true;
+    }
+  }
+
+  const search = document.getElementById("searchInput");
+
+  if (search && search.value) {
+    const clear = document.getElementById("clearSearch");
+    if (clear) clear.click();
+    return true;
+  }
+
+  return false;
+};
