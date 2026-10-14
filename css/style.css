@@ -6,6 +6,8 @@
 ========================================================= */
 
 :root{
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bottom:env(safe-area-inset-bottom,0px);
   --bg:#f3f6fc; --surface:#ffffff; --ink:#0f172a; --ink-2:#334155; --muted:#64748b;
   --line:#e2e8f3; --line-strong:#cbd5e6;
   --brand:#2563eb; --brand-hover:#1d4ed8; --brand-text:#1d4ed8; --brand-soft:#e8f0ff; --accent:#8db4ff;
@@ -62,7 +64,7 @@ body{
   font-size:15px;
   line-height:1.5;
   -webkit-font-smoothing:antialiased;
-  padding-bottom:calc(76px + env(safe-area-inset-bottom,0px));
+  padding-bottom:calc(76px + var(--safe-bottom));
 }
 button,input,textarea,select{font:inherit;color:inherit}
 button{border:0;background:none;cursor:pointer}
@@ -147,7 +149,7 @@ body.auth-active{padding-bottom:0}
 /* =========================================================
    HEADER + NAV
 ========================================================= */
-.header{position:sticky;top:0;z-index:60;background:var(--surface);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
+.header{position:sticky;top:0;z-index:60;background:var(--surface);border-bottom:1px solid var(--line);padding-top:var(--safe-top)}
 .header-inner{
   max-width:var(--wrap);margin:0 auto;padding:10px var(--gutter);
   display:grid;grid-template-columns:1fr auto;grid-template-areas:"logo cart" "search search";
@@ -192,7 +194,7 @@ body.auth-active{padding-bottom:0}
   position:fixed;left:0;right:0;bottom:0;z-index:70;
   display:grid;grid-template-columns:repeat(4,1fr);
   background:var(--surface);border-top:1px solid var(--line);
-  padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));
+  padding:6px 8px calc(6px + var(--safe-bottom));
 }
 .nav-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;color:var(--muted);font-weight:600;border-radius:10px}
 .nav-item small{font-size:11px}
@@ -379,7 +381,7 @@ main{max-width:var(--wrap);margin:0 auto;padding:16px var(--gutter) 0}
   position:relative;width:100%;max-height:92dvh;overflow-y:auto;
   background:var(--surface);border-radius:24px 24px 0 0;
   display:grid;grid-template-columns:1fr;transform:translateY(24px);transition:transform .25s ease;
-  padding-bottom:env(safe-area-inset-bottom,0px);
+  padding-bottom:var(--safe-bottom);
 }
 .product-modal.active .product-modal-box{transform:none}
 .product-modal-close{
@@ -427,7 +429,7 @@ main{max-width:var(--wrap);margin:0 auto;padding:16px var(--gutter) 0}
 }
 .cart-page.active{transform:none;visibility:visible}
 .cart-page-header,.zento-page-header{
-  display:flex;align-items:center;gap:14px;padding:calc(14px + env(safe-area-inset-top,0px)) 18px 14px;
+  display:flex;align-items:center;gap:14px;padding:calc(14px + var(--safe-top)) 18px 14px;
   background:var(--surface);border-bottom:1px solid var(--line);flex:none;
 }
 .cart-page-header > div,.zento-page-header > div{flex:1;min-width:0}
@@ -459,7 +461,7 @@ main{max-width:var(--wrap);margin:0 auto;padding:16px var(--gutter) 0}
 .cart-empty h3{color:var(--ink);font-size:20px}
 .cart-empty button{margin-top:14px;height:48px;padding:0 24px;border-radius:12px;background:var(--brand);color:#fff;font-weight:700}
 .cart-empty button:hover{background:var(--brand-hover)}
-.cart-summary{flex:none;padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.cart-summary{flex:none;padding:18px 18px calc(18px + var(--safe-bottom));background:var(--surface);border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
 .cart-summary.hidden{display:none}
 .summary-row{display:flex;justify-content:space-between;color:var(--muted)}
 .summary-row strong{color:var(--ink);font-variant-numeric:tabular-nums}
@@ -486,7 +488,7 @@ main{max-width:var(--wrap);margin:0 auto;padding:16px var(--gutter) 0}
 }
 .zento-page.active{opacity:1;visibility:visible;transform:none}
 .zento-page-header{position:sticky;top:0;z-index:2}
-.checkout-layout,.profile-layout{max-width:1040px;margin:0 auto;padding:20px var(--gutter) calc(40px + env(safe-area-inset-bottom,0px));display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start}
+.checkout-layout,.profile-layout{max-width:1040px;margin:0 auto;padding:20px var(--gutter) calc(40px + var(--safe-bottom));display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start}
 .checkout-layout > *,.profile-layout > *{min-width:0}
 .checkout-card,.profile-card,.orders-card,.checkout-summary-card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px}
 .checkout-card{padding:0;overflow:hidden}
@@ -591,7 +593,7 @@ main{max-width:var(--wrap);margin:0 auto;padding:16px var(--gutter) 0}
    TOAST
 ========================================================= */
 .toast{
-  position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom,0px));z-index:400;
+  position:fixed;left:50%;bottom:calc(92px + var(--safe-bottom));z-index:400;
   max-width:calc(100% - 32px);padding:12px 20px;border-radius:12px;
   background:var(--inverse-bg);color:var(--inverse-ink);font-weight:600;font-size:14px;text-align:center;
   box-shadow:0 12px 32px rgba(10,10,12,.3);
@@ -607,3 +609,6 @@ main{max-width:var(--wrap);margin:0 auto;padding:16px var(--gutter) 0}
 /* theme toggle on the login screen */
 .auth-theme{position:absolute;top:16px;right:16px;z-index:2}
 .auth-main{position:relative}
+
+/* Inside the Android app the native shell already adds the system bar spacing */
+html.in-app{--safe-top:0px;--safe-bottom:0px}
