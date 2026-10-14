@@ -587,3 +587,20 @@ function productModal(p, focusStock = false) {
 }
 
 checkSession();
+
+/* ---------- Android app hooks ---------- */
+if (/ZentoApp/.test(navigator.userAgent)) document.documentElement.classList.add("in-app");
+function syncNativeTheme() {
+  try {
+    const r = document.documentElement;
+    const dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    if (window.ZentoNative && window.ZentoNative.setTheme) window.ZentoNative.setTheme(dark ? "dark" : "light");
+  } catch (e) {}
+}
+syncNativeTheme();
+$("#themeBtn").addEventListener("click", () => setTimeout(syncNativeTheme, 0));
+window.zentoHandleBack = function () {
+  if ($("#layer") && $("#layer").innerHTML.trim()) { closeModal(); return true; }
+  if (location.hash && location.hash !== "#dashboard" && location.hash !== "#") { location.hash = "dashboard"; return true; }
+  return false;
+};
