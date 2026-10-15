@@ -37,6 +37,10 @@
       <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></symbol>
       <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
       <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></symbol>
+      <symbol id="i-support" viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0116 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/><path d="M19 20c0 1.5-2 2-5 2"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z"/></symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/></symbol>
+      <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></symbol>
       <symbol id="i-cash" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.8"/></symbol>
     </defs>
   </svg>
@@ -138,6 +142,11 @@
             <b id="cartCount">0</b>
           </span>
           <small>Cart</small>
+        </a>
+
+        <a href="#" class="nav-item" id="supportNav">
+          <svg class="i"><use href="#i-support"/></svg>
+          <small>Support</small>
         </a>
 
         <a href="#" class="nav-item" id="profileNav">
@@ -295,10 +304,55 @@
         <span class="logo-text"><b>Zento</b><small>Online Store</small></span>
       </a>
       <p>Quality products, fair prices, delivered to your door.</p>
+      <p><a href="#" id="footerSupport">Contact support</a></p>
       <small>&copy; <span id="footerYear">2026</span> Zento Online Store. All rights reserved.</small>
     </div>
   </footer>
 
+
+  <!-- SUPPORT -->
+  <section class="zento-page" id="supportPage" aria-hidden="true">
+    <div class="zento-page-header">
+      <button type="button" id="supportBack" class="zento-back" aria-label="Back"><svg class="i"><use href="#i-back"/></svg></button>
+      <div>
+        <span>We are here to help</span>
+        <h2>Support</h2>
+      </div>
+      <span class="zento-page-icon"><svg class="i"><use href="#i-support"/></svg></span>
+    </div>
+
+    <div class="support-layout">
+
+      <div class="support-card">
+        <div class="profile-card-heading">
+          <div>
+            <span>Contact us</span>
+            <h3>How can we help?</h3>
+          </div>
+        </div>
+        <p class="support-hours" id="supportHours"></p>
+        <div class="support-channels" id="supportChannels"></div>
+        <p class="support-empty" id="supportEmpty" hidden>Contact details will be added soon.</p>
+      </div>
+
+      <div class="support-card">
+        <div class="profile-card-heading">
+          <div>
+            <span>Quick answers</span>
+            <h3>Frequently asked questions</h3>
+          </div>
+        </div>
+
+        <details class="faq"><summary>How long does delivery take?</summary><p>We deliver as fast as possible after your order is approved. You can follow the status of every order in Profile &rarr; My Orders.</p></details>
+        <details class="faq"><summary>What does delivery cost?</summary><p>Delivery is free on orders over &#2547;100. Smaller orders pay a &#2547;5 delivery fee.</p></details>
+        <details class="faq"><summary>How can I pay?</summary><p>Choose Cash on Delivery, or pay by bKash / Nagad Send Money and enter your Transaction ID (TrxID) at checkout. Your order is confirmed after we verify the payment.</p></details>
+        <details class="faq"><summary>I paid by bKash/Nagad but the order is still pending</summary><p>We check payments manually, so it can take a little time. If it stays pending, contact us with your order number and TrxID.</p></details>
+        <details class="faq"><summary>How do I change my address or phone number?</summary><p>Open Profile, update your details and tap Save Changes. For an order that is already placed, contact us as soon as possible.</p></details>
+        <details class="faq"><summary>I received a wrong or damaged product</summary><p>Contact us with your order number and a photo of the product. We will help you right away.</p></details>
+      </div>
+
+    </div>
+  </section>
 
   <!-- PRODUCT DETAILS MODAL -->
   <div class="product-modal" id="productModal" aria-hidden="true">
@@ -468,6 +522,24 @@
               </div>
             </label>
 
+            <label class="payment-option" id="bkashOption" hidden>
+              <input type="radio" name="paymentMethod" value="bkash">
+              <span class="payment-radio"><svg class="i"><use href="#i-check"/></svg></span>
+              <div>
+                <strong>bKash</strong>
+                <small>Send Money, then enter the TrxID</small>
+              </div>
+            </label>
+
+            <label class="payment-option" id="nagadOption" hidden>
+              <input type="radio" name="paymentMethod" value="nagad">
+              <span class="payment-radio"><svg class="i"><use href="#i-check"/></svg></span>
+              <div>
+                <strong>Nagad</strong>
+                <small>Send Money, then enter the TrxID</small>
+              </div>
+            </label>
+
             <label class="payment-option">
               <input type="radio" name="paymentMethod" value="card">
               <span class="payment-radio"><svg class="i"><use href="#i-check"/></svg></span>
@@ -477,6 +549,23 @@
               </div>
             </label>
 
+          </div>
+
+          <div class="mobile-pay-box" id="mobilePayBox" hidden>
+            <ol class="mobile-pay-steps">
+              <li>Open your <b id="mpName">bKash</b> app and choose <b>Send Money</b>.</li>
+              <li>Send exactly <b id="mpAmount">৳0.00</b> to this number:
+                <div class="mp-number"><strong id="mpNumber">-</strong><button type="button" id="mpCopy">Copy</button></div>
+              </li>
+              <li>Enter the number you paid from and the Transaction ID (TrxID) below.</li>
+            </ol>
+            <label>Paid from (your number)
+              <input type="tel" id="mpSender" inputmode="tel" placeholder="01XXXXXXXXX" autocomplete="tel">
+            </label>
+            <label>Transaction ID (TrxID)
+              <input type="text" id="mpTrx" autocapitalize="characters" maxlength="20" placeholder="e.g. 9H7K2L4MNP">
+            </label>
+            <p class="mp-note">Your order is confirmed after we verify the payment.</p>
           </div>
 
           <div class="card-payment-box" id="cardPaymentBox" hidden>
@@ -631,6 +720,8 @@
   <script src="js/dynamic-products.js"></script>
   <script src="js/app.js"></script>
   <script src="js/profile-checkout.js"></script>
+  <script src="js/support-config.js"></script>
+  <script src="js/support.js"></script>
   <script src="js/storefront-ui.js"></script>
 
 </body>
