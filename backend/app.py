@@ -964,6 +964,12 @@ def ensure_order_tables():
 
     cursor.execute("""
         ALTER TABLE orders
+        ADD COLUMN IF NOT EXISTS payment_trx_id TEXT DEFAULT '',
+        ADD COLUMN IF NOT EXISTS payment_sender TEXT DEFAULT ''
+    """)
+
+    cursor.execute("""
+        ALTER TABLE orders
         ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ
     """)
 
@@ -1162,6 +1168,16 @@ def update_profile():
         }, 500
 
 
+@app.route("/api/payment-info", methods=["GET"])
+def payment_info():
+    # Merchant receiving numbers come from Render environment variables.
+    return {
+        "status": "success",
+        "bkash": os.environ.get("BKASH_NUMBER", "").strip(),
+        "nagad": os.environ.get("NAGAD_NUMBER", "").strip()
+    }
+
+
 @app.route("/api/orders", methods=["POST"])
 def create_order():
     user = get_authenticated_user()
@@ -1185,7 +1201,7 @@ def create_order():
             data.get("payment_method", "cod")
         ).strip().lower()
 
-        if payment_method not in ("cod", "card"):
+        if payment_method not in ("cod", "card", "bkash", "nagad"):
             return {
                 "status": "error",
                 "message": "Invalid payment method"
@@ -1198,6 +1214,29 @@ def create_order():
                 "status": "error",
                 "message": "Card payment is not active yet. Please select Cash on Delivery."
             }, 400
+
+        payment_trx_id = ""
+        payment_sender = ""
+
+        # Manual bKash / Nagad Send Money: customer pays first,
+        # then enters the sender number and the transaction ID.
+        if payment_method in ("bkash", "nagad"):
+            payment_trx_id = str(data.get("payment_trx_id", "")).strip().upper()
+            payment_sender = str(data.get("payment_sender", "")).strip()
+
+            if not payment_trx_id.isalnum() or not (6 <= len(payment_trx_id) <= 20):
+                return {
+                    "status": "error",
+                    "message": "Enter a valid Transaction ID (TrxID)"
+                }, 400
+
+            sender_digits = "".join(ch for ch in payment_sender if ch.isdigit())
+
+            if len(sender_digits) < 10:
+                return {
+                    "status": "error",
+                    "message": "Enter the number you paid from"
+                }, 400
 
         if not items:
             return {
@@ -1291,6 +1330,22 @@ def create_order():
         delivery_fee = 0 if subtotal >= 100 else 5
         total = subtotal + delivery_fee
 
+        if payment_trx_id:
+            cursor.execute("""
+                SELECT 1 FROM orders
+                WHERE payment_trx_id = %s AND payment_method = %s
+                LIMIT 1
+            """, (payment_trx_id, payment_method))
+
+            if cursor.fetchone():
+                conn.rollback()
+                cursor.close()
+                conn.close()
+                return {
+                    "status": "error",
+                    "message": "This Transaction ID was already used"
+                }, 400
+
         cursor.execute("""
             INSERT INTO orders (
                 user_id,
@@ -1302,9 +1357,11 @@ def create_order():
                 delivery_fee,
                 total,
                 payment_method,
+                payment_trx_id,
+                payment_sender,
                 status
             )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending')
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending')
             RETURNING id, created_at
         """, (
             user["user_id"],
@@ -1315,7 +1372,9 @@ def create_order():
             subtotal,
             delivery_fee,
             total,
-            payment_method
+            payment_method,
+            payment_trx_id,
+            payment_sender
         ))
 
         order_id, created_at = cursor.fetchone()
@@ -1411,7 +1470,9 @@ def get_orders():
                 status,
                 approved_at,
                 updated_at,
-                created_at
+                created_at,
+                COALESCE(payment_trx_id, ''),
+                COALESCE(payment_sender, '')
             FROM orders
             WHERE user_id = %s
             ORDER BY id DESC
@@ -1459,6 +1520,8 @@ def get_orders():
                 "approved_at": str(row[10]) if row[10] else None,
                 "updated_at": str(row[11]) if row[11] else None,
                 "created_at": str(row[12]),
+                "payment_trx_id": row[13],
+                "payment_sender": row[14],
                 "items": items
             })
 
@@ -1544,7 +1607,9 @@ def admin_get_orders():
                 status,
                 approved_at,
                 updated_at,
-                created_at
+                created_at,
+                COALESCE(payment_trx_id, ''),
+                COALESCE(payment_sender, '')
             FROM orders
             ORDER BY id DESC
         """)
@@ -1593,6 +1658,8 @@ def admin_get_orders():
                 "approved_at": str(row[11]) if row[11] else None,
                 "updated_at": str(row[12]) if row[12] else None,
                 "created_at": str(row[13]),
+                "payment_trx_id": row[14],
+                "payment_sender": row[15],
                 "items": items
             })
 
