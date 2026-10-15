@@ -1,0 +1,31 @@
+/* ZENTO MARKETPLACE (storefront add-ons) */
+.mp-meta{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;font-size:12px;margin:2px 0 4px}
+.mp-stars{color:#f5a524;letter-spacing:1px}
+.mp-count{color:var(--muted,#64708a)}
+.mp-seller{flex-basis:100%;color:var(--brand-text,#1d4ed8);font-weight:600;text-decoration:none}
+.mp-seller:hover{text-decoration:underline}
+.mp-ver{color:var(--brand-text,#1d4ed8);font-weight:700;font-size:11px}
+.mp-reviews{margin-top:18px;padding-top:14px;border-top:1px solid var(--line,#e3e8f2);text-align:left}
+.mp-reviews h4{margin:10px 0}
+.mp-sold{font-size:13px;margin-bottom:4px}
+.mp-sold a{color:var(--brand-text,#1d4ed8);font-weight:700}
+.mp-rev-head{display:flex;align-items:center;gap:12px}
+.mp-big{font-size:34px;font-weight:800;line-height:1}
+.mp-bars{margin:10px 0}
+.mp-bar{display:flex;align-items:center;gap:8px;font-size:12px;margin:3px 0}
+.mp-bar i{flex:1;height:7px;border-radius:99px;background:var(--line,#e3e8f2);overflow:hidden}
+.mp-bar b{display:block;height:100%;background:#f5a524}
+.mp-form{display:flex;flex-direction:column;gap:8px;margin:12px 0;padding:12px;border:1px solid var(--line,#e3e8f2);border-radius:12px}
+.mp-form input,.mp-form textarea{padding:9px 11px;border:1px solid var(--line,#e3e8f2);border-radius:9px;font:inherit;background:var(--surface,#fff);color:inherit}
+.mp-form textarea{min-height:70px;resize:vertical}
+.mp-pick button{background:none;border:0;font-size:28px;color:#c4cbda;cursor:pointer;padding:0 2px}
+.mp-pick button.on{color:#f5a524}
+.mp-btn{border:0;border-radius:9px;padding:9px 14px;background:var(--brand,#2563eb);color:#fff;font-weight:700;cursor:pointer;align-self:flex-start}
+.mp-btn.mp-ghost{background:transparent;color:inherit;border:1px solid var(--line,#e3e8f2)}
+.mp-note{color:var(--muted,#64708a);font-size:13px}
+.mp-item{padding:10px 0;border-bottom:1px solid var(--line,#e3e8f2);font-size:14px}
+.mp-item p{margin:4px 0 0}
+.mp-by{font-size:12px;color:var(--muted,#64708a)}
+.mp-vp{color:#0a8f5b;font-weight:700}
+.mp-sell a{font-weight:700}
+.mp-toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#0f1a33;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;font-size:13px}
