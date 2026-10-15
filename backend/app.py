@@ -990,6 +990,22 @@ def ensure_order_tables():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            sender TEXT NOT NULL,
+            body TEXT NOT NULL,
+            read_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS chat_messages_user_idx
+        ON chat_messages (user_id, id)
+    """)
+
     conn.commit()
     cursor.close()
     conn.close()
@@ -1574,6 +1590,294 @@ def admin_user_from_request():
         return None
 
     return user
+
+
+# ---------------------------------------------------------
+# LIVE CHAT (customer <-> admin)
+# ---------------------------------------------------------
+
+CHAT_MAX_LENGTH = 1000
+
+
+def chat_row(row):
+    return {
+        "id": row[0],
+        "sender": row[1],
+        "body": row[2],
+        "created_at": str(row[3])
+    }
+
+
+def chat_clean_body(data):
+    body = str((data or {}).get("body", "")).strip()
+    return body[:CHAT_MAX_LENGTH]
+
+
+@app.route("/api/chat/messages", methods=["GET"])
+def chat_get_messages():
+    user = get_authenticated_user()
+
+    if not user:
+        return {"status": "error", "message": "Authentication required"}, 401
+
+    try:
+        after = int(request.args.get("after", 0) or 0)
+    except ValueError:
+        after = 0
+
+    try:
+        ensure_order_tables()
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, sender, body, created_at
+            FROM chat_messages
+            WHERE user_id = %s AND id > %s
+            ORDER BY id ASC
+            LIMIT 200
+        """, (user["user_id"], after))
+
+        rows = cursor.fetchall()
+
+        # The customer opened the chat, so admin replies are now read.
+        cursor.execute("""
+            UPDATE chat_messages
+            SET read_at = NOW()
+            WHERE user_id = %s AND sender = 'admin' AND read_at IS NULL
+        """, (user["user_id"],))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {"status": "success", "messages": [chat_row(r) for r in rows]}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
+@app.route("/api/chat/unread", methods=["GET"])
+def chat_unread():
+    user = get_authenticated_user()
+
+    if not user:
+        return {"status": "error", "message": "Authentication required"}, 401
+
+    try:
+        ensure_order_tables()
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM chat_messages
+            WHERE user_id = %s AND sender = 'admin' AND read_at IS NULL
+        """, (user["user_id"],))
+
+        count = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+
+        return {"status": "success", "unread": count}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
+@app.route("/api/chat/messages", methods=["POST"])
+def chat_send_message():
+    user = get_authenticated_user()
+
+    if not user:
+        return {"status": "error", "message": "Authentication required"}, 401
+
+    body = chat_clean_body(request.get_json(silent=True))
+
+    if not body:
+        return {"status": "error", "message": "Message is empty"}, 400
+
+    try:
+        ensure_order_tables()
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        # Simple flood protection: 20 messages per minute per customer.
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM chat_messages
+            WHERE user_id = %s AND sender = 'user'
+              AND created_at > NOW() - INTERVAL '1 minute'
+        """, (user["user_id"],))
+
+        if cursor.fetchone()[0] >= 20:
+            cursor.close()
+            conn.close()
+            return {"status": "error", "message": "Too many messages. Please wait a moment."}, 429
+
+        cursor.execute("""
+            INSERT INTO chat_messages (user_id, sender, body)
+            VALUES (%s, 'user', %s)
+            RETURNING id, sender, body, created_at
+        """, (user["user_id"], body))
+
+        row = cursor.fetchone()
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {"status": "success", "message": chat_row(row)}, 201
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
+@app.route("/api/admin/chat/threads", methods=["GET"])
+def admin_chat_threads():
+    admin = admin_user_from_request()
+
+    if not admin:
+        return {"status": "error", "message": "Admin authentication required"}, 401
+
+    try:
+        ensure_order_tables()
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                u.id,
+                u.name,
+                u.email,
+                last.body,
+                last.sender,
+                last.created_at,
+                COALESCE(unread.count, 0)
+            FROM (
+                SELECT DISTINCT ON (user_id) user_id, body, sender, created_at
+                FROM chat_messages
+                ORDER BY user_id, id DESC
+            ) last
+            JOIN users u ON u.id = last.user_id
+            LEFT JOIN (
+                SELECT user_id, COUNT(*) AS count
+                FROM chat_messages
+                WHERE sender = 'user' AND read_at IS NULL
+                GROUP BY user_id
+            ) unread ON unread.user_id = last.user_id
+            ORDER BY last.created_at DESC
+            LIMIT 200
+        """)
+
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        threads = [
+            {
+                "user_id": r[0],
+                "name": r[1],
+                "email": r[2],
+                "last_body": r[3],
+                "last_sender": r[4],
+                "last_at": str(r[5]),
+                "unread": int(r[6])
+            }
+            for r in rows
+        ]
+
+        return {
+            "status": "success",
+            "threads": threads,
+            "unread_total": sum(t["unread"] for t in threads)
+        }
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
+@app.route("/api/admin/chat/threads/<int:user_id>", methods=["GET"])
+def admin_chat_thread(user_id):
+    admin = admin_user_from_request()
+
+    if not admin:
+        return {"status": "error", "message": "Admin authentication required"}, 401
+
+    try:
+        after = int(request.args.get("after", 0) or 0)
+    except ValueError:
+        after = 0
+
+    try:
+        ensure_order_tables()
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, sender, body, created_at
+            FROM chat_messages
+            WHERE user_id = %s AND id > %s
+            ORDER BY id ASC
+            LIMIT 200
+        """, (user_id, after))
+
+        rows = cursor.fetchall()
+
+        cursor.execute("""
+            UPDATE chat_messages
+            SET read_at = NOW()
+            WHERE user_id = %s AND sender = 'user' AND read_at IS NULL
+        """, (user_id,))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {"status": "success", "messages": [chat_row(r) for r in rows]}
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
+
+
+@app.route("/api/admin/chat/threads/<int:user_id>", methods=["POST"])
+def admin_chat_reply(user_id):
+    admin = admin_user_from_request()
+
+    if not admin:
+        return {"status": "error", "message": "Admin authentication required"}, 401
+
+    body = chat_clean_body(request.get_json(silent=True))
+
+    if not body:
+        return {"status": "error", "message": "Message is empty"}, 400
+
+    try:
+        ensure_order_tables()
+        conn = psycopg2.connect(os.environ["DATABASE_URL"])
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT 1 FROM users WHERE id = %s", (user_id,))
+
+        if not cursor.fetchone():
+            cursor.close()
+            conn.close()
+            return {"status": "error", "message": "Customer not found"}, 404
+
+        cursor.execute("""
+            INSERT INTO chat_messages (user_id, sender, body)
+            VALUES (%s, 'admin', %s)
+            RETURNING id, sender, body, created_at
+        """, (user_id, body))
+
+        row = cursor.fetchone()
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {"status": "success", "message": chat_row(row)}, 201
+
+    except Exception as e:
+        return {"status": "error", "message": str(e)}, 500
 
 
 @app.route("/api/admin/orders", methods=["GET"])
