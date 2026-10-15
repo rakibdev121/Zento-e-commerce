@@ -192,7 +192,7 @@ body.auth-active{padding-bottom:0}
 /* tab bar on phones */
 .bottom-nav{
   position:fixed;left:0;right:0;bottom:0;z-index:70;
-  display:grid;grid-template-columns:repeat(4,1fr);
+  display:grid;grid-template-columns:repeat(5,1fr);
   background:var(--surface);border-top:1px solid var(--line);
   padding:6px 8px calc(6px + var(--safe-bottom));
 }
@@ -612,3 +612,33 @@ main{max-width:var(--wrap);margin:0 auto;padding:16px var(--gutter) 0}
 
 /* Inside the Android app the native shell already adds the system bar spacing */
 html.in-app{--safe-top:0px;--safe-bottom:0px}
+
+/* Manual bKash / Nagad payment */
+.payment-option[hidden]{display:none!important}
+.mobile-pay-box{margin-top:14px;padding:16px;border:1.5px solid var(--line);border-radius:14px;background:var(--surface);display:grid;gap:12px}
+.mobile-pay-box[hidden]{display:none}
+.mobile-pay-steps{margin:0;padding-left:20px;display:grid;gap:8px;font-size:14px;color:var(--ink-2);line-height:1.5}
+.mp-number{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;padding:10px 12px;border-radius:10px;background:var(--brand-soft);border:1px dashed var(--brand)}
+.mp-number strong{font-size:18px;letter-spacing:.04em;color:var(--ink)}
+.mp-number button{border:0;border-radius:8px;padding:8px 14px;font:inherit;font-weight:700;background:var(--brand);color:#fff;cursor:pointer}
+.mp-note{margin:0;font-size:13px;color:var(--muted)}
+
+/* Support page */
+.support-layout{max-width:720px;margin:0 auto;padding:20px var(--gutter) calc(40px + var(--safe-bottom));display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.support-card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:14px}
+.support-hours{margin:0;font-size:14px;color:var(--muted)}
+.support-hours:empty{display:none}
+.support-channels{display:grid;gap:10px}
+.support-channel{display:flex;align-items:center;gap:14px;padding:14px 16px;border:1.5px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);text-decoration:none}
+.support-channel:hover{border-color:var(--brand);background:var(--brand-soft)}
+.support-channel .ch-icon{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand-text);flex:none}
+.support-channel strong{display:block;font-size:15px}
+.support-channel small{display:block;color:var(--muted);font-weight:500;overflow-wrap:anywhere}
+.support-empty{margin:0;color:var(--muted);font-size:14px}
+.faq{border:1px solid var(--line);border-radius:12px;padding:0 14px;background:var(--surface)}
+.faq summary{cursor:pointer;padding:13px 0;font-weight:700;font-size:15px;color:var(--ink);list-style:none;display:flex;justify-content:space-between;gap:12px}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";font-size:20px;line-height:1;color:var(--brand-text)}
+.faq[open] summary::after{content:"\2212"}
+.faq p{margin:0 0 14px;color:var(--ink-2);font-size:14px;line-height:1.6}
+.footer-inner p a{color:var(--brand-text);font-weight:700}
