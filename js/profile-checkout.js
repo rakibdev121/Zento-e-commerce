@@ -228,7 +228,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
               <div>
                 <small>Payment</small>
-                <strong>${order.payment_method === "cod" ? "Cash on Delivery" : "Card Payment"}</strong>
+                <strong>${paymentLabel(order)}</strong>
               </div>
             </div>
 
@@ -331,6 +331,77 @@ document.addEventListener("DOMContentLoaded", () => {
     if (totalEl) totalEl.textContent = money(total);
   }
 
+  /* ---------- bKash / Nagad manual payment ---------- */
+
+  const paymentInfo = { bkash: "", nagad: "" };
+  let paymentInfoLoaded = false;
+
+  function currentTotal() {
+    const cart = getCart();
+    const subtotal = cart.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
+    return subtotal + (subtotal >= 100 ? 0 : 5);
+  }
+
+  function updateMobilePay(method) {
+    const box = document.getElementById("mobilePayBox");
+    if (!box) return;
+
+    const isMobile = method === "bkash" || method === "nagad";
+    box.hidden = !isMobile;
+    if (!isMobile) return;
+
+    document.getElementById("mpName").textContent = method === "bkash" ? "bKash" : "Nagad";
+    document.getElementById("mpNumber").textContent = paymentInfo[method] || "-";
+    document.getElementById("mpAmount").textContent = money(currentTotal());
+  }
+
+  async function loadPaymentInfo() {
+    if (paymentInfoLoaded) return;
+
+    try {
+      const res = await fetch(`${window.location.origin}/api/payment-info`);
+      const data = await res.json();
+
+      paymentInfo.bkash = data.bkash || "";
+      paymentInfo.nagad = data.nagad || "";
+      paymentInfoLoaded = true;
+    } catch (error) {
+      return;
+    }
+
+    const bk = document.getElementById("bkashOption");
+    const ng = document.getElementById("nagadOption");
+
+    if (bk) bk.hidden = !paymentInfo.bkash;
+    if (ng) ng.hidden = !paymentInfo.nagad;
+  }
+
+  document.getElementById("mpCopy")?.addEventListener("click", event => {
+    const number = document.getElementById("mpNumber")?.textContent || "";
+    const button = event.currentTarget;
+
+    const done = () => {
+      button.textContent = "Copied";
+      setTimeout(() => { button.textContent = "Copy"; }, 1500);
+    };
+
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(number).then(done).catch(() => {});
+    }
+  });
+
+  function paymentLabel(order) {
+    const method = order.payment_method;
+
+    if (method === "cod") return "Cash on Delivery";
+    if (method === "bkash" || method === "nagad") {
+      const name = method === "bkash" ? "bKash" : "Nagad";
+      return order.payment_trx_id ? `${name} · ${escapeHtml(order.payment_trx_id)}` : name;
+    }
+
+    return "Card Payment";
+  }
+
   function setupPaymentOptions() {
     const options = document.querySelectorAll('input[name="paymentMethod"]');
     const cardBox = document.getElementById("cardPaymentBox");
@@ -349,6 +420,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (cardBox) {
         cardBox.hidden = method !== "card";
       }
+
+      updateMobilePay(method);
     }
 
     options.forEach(input => {
@@ -372,6 +445,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     openPage(checkoutPage);
     renderCheckout();
+    loadPaymentInfo();
     await loadProfile();
   }
 
@@ -443,6 +517,17 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       return;
     }
+    const isMobilePay = selectedPayment === "bkash" || selectedPayment === "nagad";
+    const payTrx = document.getElementById("mpTrx")?.value.trim() || "";
+    const paySender = document.getElementById("mpSender")?.value.trim() || "";
+
+    if (isMobilePay && (!payTrx || !paySender)) {
+      if (message) {
+        message.textContent = "Enter the number you paid from and the Transaction ID.";
+      }
+      return;
+    }
+
     const button = checkoutForm.querySelector("button[type=submit]");
 
     if (message) message.textContent = "Placing your order...";
@@ -456,7 +541,9 @@ document.addEventListener("DOMContentLoaded", () => {
           phone: document.getElementById("checkoutPhone")?.value.trim(),
           city: document.getElementById("checkoutCity")?.value.trim(),
           address: document.getElementById("checkoutAddress")?.value.trim(),
-          payment_method: document.querySelector('input[name="paymentMethod"]:checked')?.value || "cod",
+          payment_method: selectedPayment,
+          payment_trx_id: isMobilePay ? payTrx : "",
+          payment_sender: isMobilePay ? paySender : "",
           items: cart
         })
       });
