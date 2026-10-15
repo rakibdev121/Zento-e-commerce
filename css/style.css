@@ -192,7 +192,7 @@ body.auth-active{padding-bottom:0}
 /* tab bar on phones */
 .bottom-nav{
   position:fixed;left:0;right:0;bottom:0;z-index:70;
-  display:grid;grid-template-columns:repeat(4,1fr);
+  display:grid;grid-template-columns:repeat(5,1fr);
   background:var(--surface);border-top:1px solid var(--line);
   padding:6px 8px calc(6px + var(--safe-bottom));
 }
@@ -622,3 +622,42 @@ html.in-app{--safe-top:0px;--safe-bottom:0px}
 .mp-number strong{font-size:18px;letter-spacing:.04em;color:var(--ink)}
 .mp-number button{border:0;border-radius:8px;padding:8px 14px;font:inherit;font-weight:700;background:var(--brand);color:#fff;cursor:pointer}
 .mp-note{margin:0;font-size:13px;color:var(--muted)}
+
+/* Support page */
+.support-layout{max-width:720px;margin:0 auto;padding:20px var(--gutter) calc(40px + var(--safe-bottom));display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.support-card{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:14px}
+.support-hours{margin:0;font-size:14px;color:var(--muted)}
+.support-hours:empty{display:none}
+.support-channels{display:grid;gap:10px}
+.support-channel{display:flex;align-items:center;gap:14px;padding:14px 16px;border:1.5px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);text-decoration:none}
+.support-channel:hover{border-color:var(--brand);background:var(--brand-soft)}
+.support-channel .ch-icon{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand-text);flex:none}
+.support-channel strong{display:block;font-size:15px}
+.support-channel small{display:block;color:var(--muted);font-weight:500;overflow-wrap:anywhere}
+.support-empty{margin:0;color:var(--muted);font-size:14px}
+.faq{border:1px solid var(--line);border-radius:12px;padding:0 14px;background:var(--surface)}
+.faq summary{cursor:pointer;padding:13px 0;font-weight:700;font-size:15px;color:var(--ink);list-style:none;display:flex;justify-content:space-between;gap:12px}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+";font-size:20px;line-height:1;color:var(--brand-text)}
+.faq[open] summary::after{content:"\2212"}
+.faq p{margin:0 0 14px;color:var(--ink-2);font-size:14px;line-height:1.6}
+.footer-inner p a{color:var(--brand-text);font-weight:700}
+
+/* Live chat */
+#chatPage{display:flex;flex-direction:column}
+.chat-wrap{flex:1;min-height:0;display:flex;flex-direction:column;max-width:720px;width:100%;margin:0 auto}
+.chat-messages{flex:1;overflow-y:auto;padding:16px var(--gutter);display:flex;flex-direction:column;gap:8px}
+.chat-note{margin:auto;text-align:center;color:var(--muted);font-size:14px;max-width:280px;line-height:1.5}
+.chat-msg{max-width:80%;padding:10px 13px;border-radius:16px;display:grid;gap:3px;background:var(--surface);border:1px solid var(--line);color:var(--ink)}
+.chat-msg p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.45}
+.chat-msg small{font-size:11px;color:var(--muted);justify-self:end}
+.chat-msg.me{align-self:flex-end;background:var(--brand);border-color:var(--brand);color:#fff;border-bottom-right-radius:5px}
+.chat-msg.me small{color:rgba(255,255,255,.75)}
+.chat-msg.them{align-self:flex-start;border-bottom-left-radius:5px}
+.chat-form{display:flex;align-items:flex-end;gap:10px;padding:12px var(--gutter) calc(12px + var(--safe-bottom));border-top:1px solid var(--line);background:var(--surface)}
+.chat-form textarea{flex:1;resize:none;border:1.5px solid var(--line);border-radius:14px;padding:11px 14px;font:inherit;font-size:16px;background:var(--bg);color:var(--ink);min-height:46px;max-height:120px}
+.chat-send{width:46px;height:46px;border-radius:50%;border:0;background:var(--brand);color:#fff;display:grid;place-items:center;cursor:pointer;flex:none}
+.chat-send:disabled{opacity:.5}
+.nav-item{position:relative}
+.nav-dot{position:absolute;top:2px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center;font-style:normal;line-height:1}
+@media (min-width:901px){.nav-dot{left:auto;right:6px;top:8px}}
