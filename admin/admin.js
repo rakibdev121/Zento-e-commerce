@@ -36,6 +36,7 @@ const I = {
   recent: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   revenue: '<path d="M12 3v9h9"/><circle cx="12" cy="12" r="9"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>',
+  chat: '<path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z"/>',
   more: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -416,29 +417,34 @@ const ROUTES = {
   lowstock: { t: "Low Stock Alerts", i: "lowstock", v: vLow },
   recent: { t: "Recent Orders", i: "recent", v: vRecent },
   revenue: { t: "Revenue by Category", i: "revenue", v: vRevenue },
+  messages: { t: "Messages", i: "chat", v: vMessages },
   settings: { t: "Settings", i: "settings", v: vSettings }
 };
-const MAIN = ["dashboard", "products", "orders", "customers", "analytics"];
+const MAIN = ["dashboard", "products", "orders", "messages", "customers", "analytics"];
 const REPORTS = ["lowstock", "recent", "revenue"];
 const curRoute = () => { const k = (location.hash || "#dashboard").slice(1); return ROUTES[k] ? k : "dashboard"; };
 
 function buildNav(cur) {
   const link = (k) => `<a href="#${k}" data-go="${k}"${k === cur ? ' aria-current="page"' : ""}>${ico(ROUTES[k].i)}${ROUTES[k].t}</a>`;
   $("#nav").innerHTML = MAIN.map(link).join("") + '<div class="nav-label">Reports</div>' + REPORTS.map(link).join("") + '<div class="nav-label">Store</div>' + link("settings");
-  const tabs = [["dashboard", "Home"], ["products", "Products"], ["orders", "Orders"]];
-  $("#tabbar").innerHTML = tabs.map(([k, l]) => `<button data-go="${k}"${k === cur ? ' aria-current="page"' : ""}>${ico(ROUTES[k].i)}${l}</button>`).join("") + `<button id="moreBtn"${!["dashboard", "products", "orders"].includes(cur) ? ' aria-current="page"' : ""}>${ico("more")}More</button>`;
+  const tabs = [["dashboard", "Home"], ["products", "Products"], ["orders", "Orders"], ["messages", "Chat"]];
+  $("#tabbar").innerHTML = tabs.map(([k, l]) => `<button data-go="${k}"${k === cur ? ' aria-current="page"' : ""}>${ico(ROUTES[k].i)}${l}</button>`).join("") + `<button id="moreBtn"${!["dashboard", "products", "orders", "messages"].includes(cur) ? ' aria-current="page"' : ""}>${ico("more")}More</button>`;
 }
 function renderView() {
   if ($("#adminApp").hidden) return;
   const k = curRoute();
   buildNav(k);
   specs = {};
+  stopChat();
   const view = $("#view");
   if (k === "settings") view.innerHTML = vSettings();
+  else if (k === "messages") view.innerHTML = vMessages();
   else if (S.loading && !S.loaded) view.innerHTML = head(ROUTES[k].t, "Loading your store data...") + statePanel('<div class="spinner"></div>Loading...');
   else if (S.error && !S.loaded) view.innerHTML = head(ROUTES[k].t, "Something went wrong") + statePanel(`<div>${esc(S.error)}</div><button class="btn btn-primary" id="retryBtn">Try again</button>`);
   else view.innerHTML = ROUTES[k].v();
   paintCharts(); wire(k);
+  setBadge(C.unread);
+  if (k === "messages") chatStart();
 }
 function route() {
   document.body.classList.remove("nav-open");
@@ -446,6 +452,98 @@ function route() {
   window.scrollTo(0, 0);
 }
 function updateBell() { const d = $("#bellDot"); if (d) d.hidden = !lowStockList().length; }
+
+
+/* ---------- Live chat (customer messages) ---------- */
+const C = { threads: [], uid: null, name: "", msgs: [], last: 0, timer: null, unread: 0 };
+const tshort = (s) => { const d = pdate(s); return isNaN(d) ? "" : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+const tlist = (s) => { const d = pdate(s); if (isNaN(d)) return ""; return d.toDateString() === new Date().toDateString() ? tshort(s) : `${MON[d.getMonth()]} ${d.getDate()}`; };
+
+function vMessages() {
+  return head("Messages", "Chat with your customers") + `<section class="card chat${C.uid ? " open" : ""}" id="chatRoot"><div class="chat-list" id="chatList"></div><div class="chat-conv" id="chatConv"></div></section>`;
+}
+function setBadge(n) {
+  C.unread = n || 0;
+  document.querySelectorAll('[data-go="messages"]').forEach((a) => {
+    let b = a.querySelector(".cbadge");
+    if (C.unread > 0) {
+      if (!b) { b = document.createElement("i"); b.className = "cbadge"; a.appendChild(b); }
+      b.textContent = C.unread > 99 ? "99+" : String(C.unread);
+    } else if (b) b.remove();
+  });
+}
+function stopChat() { clearInterval(C.timer); C.timer = null; }
+async function loadThreads() {
+  try {
+    const d = await api("/api/admin/chat/threads");
+    C.threads = d.threads || [];
+    setBadge(d.unread_total || 0);
+    drawThreads();
+  } catch (e) { if (e.status === 401) logout(); }
+}
+function drawThreads() {
+  const box = $("#chatList"); if (!box) return;
+  box.innerHTML = C.threads.length ? C.threads.map((t) => `<button type="button" class="chat-item${t.user_id === C.uid ? " on" : ""}" data-chat="${t.user_id}"><div class="avatar">${esc((t.name || "?").charAt(0).toUpperCase())}</div><div class="ci-b"><b>${esc(t.name || t.email)}</b><span>${t.last_sender === "admin" ? "You: " : ""}${esc(t.last_body)}</span></div><div class="ci-m"><small>${tlist(t.last_at)}</small>${t.unread ? `<i class="cbadge">${t.unread}</i>` : ""}</div></button>`).join("") : `<div class="empty">No messages yet. When a customer writes from the app, it appears here.</div>`;
+}
+function bubble(m) { return `<div class="cm ${m.sender === "admin" ? "me" : "them"}"><p>${esc(m.body)}</p><small>${tshort(m.created_at)}</small></div>`; }
+function openConv(uid) {
+  const t = C.threads.find((x) => x.user_id === uid) || {};
+  C.uid = uid; C.name = t.name || t.email || "Customer"; C.msgs = []; C.last = 0;
+  const root = $("#chatRoot"); if (root) root.classList.add("open");
+  $("#chatConv").innerHTML = `<div class="conv-h"><button type="button" class="icon-btn conv-back" id="chatBack" aria-label="Back">&larr;</button><div><b>${esc(C.name)}</b><small>${esc(t.email || "")}</small></div></div><div class="conv-m" id="chatMsgs"></div><form class="conv-f" id="chatForm"><textarea id="chatInput" rows="1" maxlength="1000" placeholder="Write a reply..." aria-label="Reply"></textarea><button class="btn btn-primary" type="submit">Send</button></form>`;
+  $("#chatBack").addEventListener("click", closeConv);
+  $("#chatForm").addEventListener("submit", sendReply);
+  $("#chatInput").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#chatForm").requestSubmit(); } });
+  drawThreads(); loadMsgs(true);
+}
+function closeConv() {
+  C.uid = null;
+  const root = $("#chatRoot"); if (root) root.classList.remove("open");
+  const c = $("#chatConv"); if (c) c.innerHTML = `<div class="conv-empty">Select a conversation</div>`;
+  drawThreads();
+}
+async function loadMsgs(first) {
+  const uid = C.uid; if (!uid) return;
+  try {
+    const d = await api(`/api/admin/chat/threads/${uid}?after=${C.last}`);
+    if (uid !== C.uid) return;
+    const list = d.messages || [];
+    if (list.length) addMsgs(list, first);
+    if (first) loadThreads();
+  } catch (e) { if (e.status === 401) logout(); }
+}
+function addMsgs(list, force) {
+  const box = $("#chatMsgs"); if (!box) return;
+  const near = force || box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+  list.forEach((m) => { C.msgs.push(m); C.last = Math.max(C.last, m.id); });
+  box.insertAdjacentHTML("beforeend", list.map(bubble).join(""));
+  if (near) box.scrollTop = box.scrollHeight;
+}
+async function sendReply(e) {
+  e.preventDefault();
+  const inp = $("#chatInput"), body = inp.value.trim(); if (!body || !C.uid) return;
+  inp.value = ""; inp.disabled = true;
+  try {
+    const d = await api(`/api/admin/chat/threads/${C.uid}`, { method: "POST", body: JSON.stringify({ body }) });
+    if (d.message && d.message.id > C.last) addMsgs([d.message], true);
+    loadThreads();
+  } catch (err) { inp.value = body; toast(err.message || "Could not send.", "error"); }
+  inp.disabled = false; inp.focus();
+}
+function chatStart() {
+  const c = $("#chatConv");
+  if (C.uid) openConv(C.uid); else if (c) c.innerHTML = `<div class="conv-empty">Select a conversation</div>`;
+  loadThreads();
+  C.timer = setInterval(() => { if (document.visibilityState === "hidden") return; loadThreads(); loadMsgs(false); }, 5000);
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-chat]"); if (b) openConv(Number(b.dataset.chat));
+});
+/* unread badge while the admin is on another page */
+setInterval(() => {
+  if (!$("#adminApp") || $("#adminApp").hidden || document.visibilityState === "hidden" || C.timer) return;
+  loadThreads();
+}, 30000);
 
 /* ---------- interactions ---------- */
 function wire() {
@@ -611,6 +709,7 @@ syncNativeTheme();
 $("#themeBtn").addEventListener("click", () => setTimeout(syncNativeTheme, 0));
 window.zentoHandleBack = function () {
   if ($("#layer") && $("#layer").innerHTML.trim()) { closeModal(); return true; }
+  if (C.uid) { closeConv(); return true; }
   if (location.hash && location.hash !== "#dashboard" && location.hash !== "#") { location.hash = "dashboard"; return true; }
   return false;
 };
