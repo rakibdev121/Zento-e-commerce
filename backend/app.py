@@ -116,14 +116,26 @@ def setup_products():
 
 @app.route("/api/products", methods=["GET"])
 def get_products():
+    # ZENTO_MARKETPLACE: adds seller info + ratings, hides suspended sellers' products.
+    # Admin can pass ?all=1 (with admin login token) to also see hidden products.
     try:
+        _mp_ready()
+        show_all = request.args.get("all") == "1" and bool(admin_user_from_request())
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, name, description, price, image_url, category, stock, created_at
-            FROM products
-            ORDER BY id DESC
-        """)
+            SELECT p.id, p.name, p.description, p.price, p.image_url, p.category, p.stock, p.created_at,
+                   p.seller_id, s.store_name, s.slug, s.is_verified,
+                   COALESCE(r.avg, 0), COALESCE(r.cnt, 0)
+            FROM products p
+            LEFT JOIN sellers s ON s.id = p.seller_id
+            LEFT JOIN (
+                SELECT product_id, AVG(rating)::numeric(3,2) AS avg, COUNT(*) AS cnt
+                FROM reviews GROUP BY product_id
+            ) r ON r.product_id = p.id
+            WHERE (%s OR p.seller_id IS NULL OR s.status = 'approved')
+            ORDER BY p.id DESC
+        """, (show_all,))
         rows = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -137,7 +149,13 @@ def get_products():
                 "image_url": row[4],
                 "category": row[5],
                 "stock": row[6],
-                "created_at": str(row[7])
+                "created_at": str(row[7]),
+                "seller_id": row[8],
+                "seller_name": row[9],
+                "seller_slug": row[10],
+                "seller_verified": bool(row[11]),
+                "rating_avg": float(row[12]),
+                "rating_count": int(row[13])
             }
             for row in rows
         ]
@@ -1267,6 +1285,7 @@ def create_order():
             }, 400
 
         ensure_order_tables()
+        _mp_ready()
 
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cursor = conn.cursor()
@@ -1313,6 +1332,20 @@ def create_order():
                 }, 400
 
             real_id, real_name, real_price, stock = product
+
+            # ZENTO_MARKETPLACE: products of non-approved sellers cannot be bought
+            cursor.execute("""
+                SELECT 1 FROM products p JOIN sellers s ON s.id = p.seller_id
+                WHERE p.id = %s AND s.status <> 'approved'
+            """, (real_id,))
+            if cursor.fetchone():
+                conn.rollback()
+                cursor.close()
+                conn.close()
+                return {
+                    "status": "error",
+                    "message": f"{real_name} is not available right now"
+                }, 400
 
             if stock is not None and quantity > stock:
                 conn.rollback()
@@ -1414,6 +1447,13 @@ def create_order():
                 item["quantity"],
                 item["subtotal"]
             ))
+
+            # ZENTO_MARKETPLACE: remember which seller sold this item
+            cursor.execute("""
+                UPDATE order_items
+                SET seller_id = (SELECT seller_id FROM products WHERE id = %s)
+                WHERE order_id = %s AND product_id = %s
+            """, (item["id"], order_id, item["id"]))
 
             cursor.execute("""
                 UPDATE products
@@ -2003,6 +2043,7 @@ def admin_update_order_status(order_id):
             }, 400
 
         ensure_order_tables()
+        _mp_ready()
 
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cursor = conn.cursor()
@@ -2038,6 +2079,10 @@ def admin_update_order_status(order_id):
                 "status": "error",
                 "message": "Order not found"
             }, 404
+
+        # ZENTO_MARKETPLACE: on delivery take commission and credit seller wallets
+        if new_status == "delivered":
+            mp_credit_order(cursor, order_id)
 
         conn.commit()
         cursor.close()
@@ -2269,3 +2314,42 @@ def zento_messenger_receive():
                 ).start()
 
     return {"status": "received"}, 200
+
+
+# =========================================================
+# ZENTO_MARKETPLACE
+# Multi-vendor sellers, commission wallet, withdrawals, reviews
+# =========================================================
+import importlib.util as _ilu
+
+_mp_spec = _ilu.spec_from_file_location(
+    "zento_marketplace",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "marketplace.py")
+)
+_mp = _ilu.module_from_spec(_mp_spec)
+_mp_spec.loader.exec_module(_mp)
+mp_credit_order = _mp.mp_credit_order
+
+
+def _mp_ready():
+    """Make sure marketplace tables exist (normally done at boot; retried here if boot failed)."""
+    if not _mp.READY:
+        try:
+            _mp_ensure_base()
+            _mp.ensure_tables()
+        except Exception:
+            pass
+
+
+def _mp_ensure_base():
+    ensure_auth_tables()
+    ensure_order_tables()
+
+
+_mp.init_marketplace(
+    app,
+    get_user=get_authenticated_user,
+    admin_user=admin_user_from_request,
+    base_dir=BASE_DIR,
+    ensure_base=_mp_ensure_base
+)
