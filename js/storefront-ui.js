@@ -101,7 +101,8 @@ window.zentoHandleBack = function () {
     ["productModal", "closeProductModal"],
     ["checkoutPage", "checkoutBack"],
     ["profilePage", "profileBack"],
-    ["cartPage", "cartBack"]
+    ["cartPage", "cartBack"],
+    ["supportPage", "supportBack"]
   ];
 
   for (const [screenId, buttonId] of screens) {
