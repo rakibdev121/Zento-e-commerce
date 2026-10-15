@@ -4,9 +4,9 @@
    whatsapp: number with country code, digits only (e.g. 8801XXXXXXXXX)
 ========================================= */
 window.ZENTO_SUPPORT = {
-  whatsapp: "",
-  phone: "",
-  email: "",
-  facebook: "",
-  hours: ""
+  whatsapp: "+8801764319497",
+  phone: "+8801764319497",
+  email: "zentoonlinestore7@gmail.com",
+  facebook: "https://www.facebook.com/share/1DgSMDEhYd/",
+  hours: "24/7"
 };
