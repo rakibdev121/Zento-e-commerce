@@ -56,6 +56,14 @@
     const email = clean(cfg.email);
     const facebook = clean(cfg.facebook);
 
+    const live = channel("#", "i-chat", "Live chat", "Chat with our team now");
+    live.removeAttribute("target");
+    live.addEventListener("click", function (event) {
+      event.preventDefault();
+      if (window.zentoOpenChat) window.zentoOpenChat();
+    });
+    list.appendChild(live);
+
     if (whatsapp) {
       list.appendChild(channel("https://wa.me/" + whatsapp, "i-chat", "WhatsApp", "Chat with us"));
     }
@@ -72,7 +80,7 @@
       list.appendChild(channel(facebook, "i-chat", "Facebook", "Message our page"));
     }
 
-    if (empty) empty.hidden = list.children.length > 0;
+    if (empty) empty.hidden = true;
     if (hours) hours.textContent = clean(cfg.hours);
   }
 

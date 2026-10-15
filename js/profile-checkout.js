@@ -60,6 +60,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const data = await response.json().catch(() => ({}));
 
+    if (response.status === 401 && token()) {
+      /* The saved login expired. Ask the customer to log in again. */
+      localStorage.removeItem("zento_token");
+      localStorage.removeItem("zento_user");
+      alert("Your session expired. Please log in again.");
+      location.reload();
+      throw new Error("Session expired. Please log in again.");
+    }
+
     if (!response.ok) {
       throw new Error(data.message || "Request failed");
     }

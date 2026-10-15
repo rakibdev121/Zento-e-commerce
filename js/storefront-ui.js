@@ -1,3 +1,18 @@
+/* Saved login that has already expired: clear it so the login screen shows */
+(function () {
+  try {
+    const t = localStorage.getItem("zento_token");
+    if (!t) return;
+    const part = t.split(".")[1];
+    if (!part) return;
+    const json = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
+    if (json.exp && json.exp * 1000 < Date.now()) {
+      localStorage.removeItem("zento_token");
+      localStorage.removeItem("zento_user");
+    }
+  } catch (error) {}
+})();
+
 /* Android app: native shell handles system bar spacing */
 if (/ZentoApp/.test(navigator.userAgent)) document.documentElement.classList.add("in-app");
 
@@ -102,6 +117,7 @@ window.zentoHandleBack = function () {
     ["checkoutPage", "checkoutBack"],
     ["profilePage", "profileBack"],
     ["cartPage", "cartBack"],
+    ["chatPage", "chatBack"],
     ["supportPage", "supportBack"]
   ];
 
