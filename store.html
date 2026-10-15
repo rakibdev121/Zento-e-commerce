@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1736">
+  <title>Store | Zento</title>
+  <link rel="icon" type="image/png" href="/assets/zento-logo.png">
+  <link rel="stylesheet" href="/seller/seller.css?v=1">
+  <style>
+    body{padding-bottom:30px}
+    .banner{height:150px;border-radius:16px;background:linear-gradient(135deg,#1d4ed8,#0b1736) center/cover no-repeat;margin-bottom:-38px}
+    @media(min-width:720px){.banner{height:210px}}
+    .shead{display:flex;gap:14px;align-items:flex-end;padding:0 16px;flex-wrap:wrap}
+    .logo{width:84px;height:84px;border-radius:18px;border:4px solid var(--bg);background:var(--surface) center/cover;display:grid;place-items:center;font-size:34px;flex:none;overflow:hidden}
+    .sinfo{flex:1;min-width:200px;padding-top:42px}
+    .sinfo h1{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0}
+    .pgrid{display:grid;gap:12px;grid-template-columns:repeat(2,1fr)}
+    @media(min-width:720px){.pgrid{grid-template-columns:repeat(4,1fr)}}
+    .pc{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+    .pc .im{aspect-ratio:1/1;background:var(--brand-soft);display:grid;place-items:center;font-size:42px}
+    .pc .im img{width:100%;height:100%;object-fit:cover}
+    .pc .bd{padding:10px 12px;display:flex;flex-direction:column;gap:4px;flex:1}
+    .pc h3{font-size:14px;margin:0;line-height:1.3}
+    .pc .pr{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:6px}
+    .pc .pr b{font-size:16px}
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/"><img src="/assets/zento-logo.png" alt="" onerror="this.style.display='none'"><span><b>Zento</b> Online Store</span></a>
+    <div class="top-right"><a class="link" href="/">Continue shopping</a></div>
+  </header>
+  <main class="wrap" id="app"><div class="center muted">Loading store...</div></main>
+  <div id="toast" class="toast" hidden></div>
+  <script src="/js/store.js?v=1"></script>
+</body>
+</html>
