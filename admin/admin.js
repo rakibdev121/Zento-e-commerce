@@ -152,7 +152,7 @@ async function loadAll() {
   renderView(); updateBell();
 }
 async function reloadProducts() {
-  const p = await api("/api/products");
+  const p = await api("/api/products?all=1");
   S.products = Array.isArray(p) ? p : p.products || p.data || [];
   updateBell();
 }
@@ -408,6 +408,136 @@ function vSettings() {
   </form></section>`;
 }
 
+/* ---------- ZENTO MARKETPLACE (sellers, withdrawals, commission, reviews) ---------- */
+Object.assign(I, {
+  sellers: '<path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/>',
+  wallet: '<rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 10h18M16 15h2"/>',
+  star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>'
+});
+const MP = { sellerFilter: "pending", wdFilter: "pending" };
+const mpPill = (s) => ({ approved: "good", pending: "warn", rejected: "bad", suspended: "bad" }[s] || "info");
+
+function mpAsk(title, label, okText, cb) {
+  showModal(`<div class="modal-h"><h2>${esc(title)}</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div>
+  <div class="modal-b"><div class="form"><label class="full">${esc(label)}<textarea id="mpNote" maxlength="300"></textarea></label></div></div>
+  <div class="modal-f"><button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" id="mpOk">${esc(okText)}</button></div>`);
+  $("#mpOk").addEventListener("click", () => { const v = $("#mpNote").value.trim(); closeModal(); cb(v); });
+}
+
+function vSellers() {
+  const opts = [["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["suspended", "Suspended"], ["", "All"]]
+    .map(([v, l]) => `<option value="${v}"${v === MP.sellerFilter ? " selected" : ""}>${l}</option>`).join("");
+  return head("Sellers", "Approve applications, give the Verified badge, suspend stores", `<label class="field"><select id="mpSellerFilter" aria-label="Filter sellers">${opts}</select></label>`) + `
+  <section class="card table-card"><div class="tscroll"><table><thead><tr><th>Store</th><th>Owner</th><th>Status</th><th>Products</th><th>Balance</th><th>Actions</th></tr></thead>
+  <tbody id="mpBody"><tr><td colspan="6"><div class="empty">Loading...</div></td></tr></tbody></table></div></section>`;
+}
+async function mpLoadSellers() {
+  const body = $("#mpBody"); if (!body) return;
+  try {
+    const d = await api("/api/admin/sellers" + (MP.sellerFilter ? `?status=${MP.sellerFilter}` : ""));
+    if (!$("#mpBody")) return;
+    body.innerHTML = d.sellers.length ? d.sellers.map((s) => {
+      const acts = [];
+      if (s.status !== "approved") acts.push(`<button class="btn btn-sm btn-primary" data-sact="approve" data-sid="${s.id}">Approve</button>`);
+      if (s.status === "pending") acts.push(`<button class="btn btn-sm btn-ghost" data-sact="reject" data-sid="${s.id}">Reject</button>`);
+      if (s.status === "approved") {
+        acts.push(`<button class="btn btn-sm btn-ghost" data-sact="${s.is_verified ? "unverify" : "verify"}" data-sid="${s.id}">${s.is_verified ? "Remove badge" : "✔ Verify"}</button>`);
+        acts.push(`<button class="btn btn-sm btn-ghost" data-sact="suspend" data-sid="${s.id}">Suspend</button>`);
+      }
+      return `<tr><td><b>${esc(s.store_name)}</b>${s.is_verified ? ' <span class="pill info">✔ Verified</span>' : ""}<br><small>${esc(s.phone)} · ${esc(s.city || "")}</small>
+        ${s.description ? `<br><small>${esc(s.description).slice(0, 120)}</small>` : ""}${s.payout_method ? `<br><small>Payout: ${esc(s.payout_method)} ${esc(s.payout_account)}</small>` : ""}
+        ${s.admin_note ? `<br><small>Note: ${esc(s.admin_note)}</small>` : ""}</td>
+        <td>${esc(s.owner_name)}<br><small>${esc(s.owner_email)}</small></td>
+        <td><span class="pill ${mpPill(s.status)}">${esc(s.status)}</span><br><small>${dshort(s.created_at)}</small></td>
+        <td>${s.product_count}</td><td>${money(s.balance)}</td><td style="white-space:nowrap">${acts.join(" ")}</td></tr>`;
+    }).join("") : `<tr><td colspan="6"><div class="empty">No sellers found.</div></td></tr>`;
+  } catch (e) { body.innerHTML = `<tr><td colspan="6"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+async function mpSellerAction(id, act) {
+  const put = async (path, payload, msg) => { try { const r = await api(path, { method: "PUT", body: JSON.stringify(payload) }); toast(r.message || msg); mpLoadSellers(); } catch (e) { toast(e.message, "error"); } };
+  if (act === "approve") return put(`/api/admin/sellers/${id}/status`, { status: "approved" }, "Seller approved");
+  if (act === "verify" || act === "unverify") return put(`/api/admin/sellers/${id}/verify`, { verified: act === "verify" }, "Updated");
+  if (act === "reject") return mpAsk("Reject application", "Reason (shown to the seller)", "Reject", (note) => put(`/api/admin/sellers/${id}/status`, { status: "rejected", note }, "Rejected"));
+  if (act === "suspend") return mpAsk("Suspend seller", "Reason (shown to the seller). Their products are hidden from the store.", "Suspend", (note) => put(`/api/admin/sellers/${id}/status`, { status: "suspended", note }, "Suspended"));
+}
+
+function vWithdrawals() {
+  const opts = [["pending", "Pending"], ["approved", "Paid"], ["rejected", "Rejected"], ["", "All"]]
+    .map(([v, l]) => `<option value="${v}"${v === MP.wdFilter ? " selected" : ""}>${l}</option>`).join("");
+  return head("Withdrawals", "Send the money manually, then approve to mark it paid", `<label class="field"><select id="mpWdFilter" aria-label="Filter withdrawals">${opts}</select></label>`) + `
+  <section class="card table-card"><div class="tscroll"><table><thead><tr><th>Seller</th><th>Amount</th><th>Send to</th><th>Requested</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody id="mpBody"><tr><td colspan="6"><div class="empty">Loading...</div></td></tr></tbody></table></div></section>`;
+}
+async function mpLoadWithdrawals() {
+  const body = $("#mpBody"); if (!body) return;
+  try {
+    const d = await api("/api/admin/withdrawals" + (MP.wdFilter ? `?status=${MP.wdFilter}` : ""));
+    if (!$("#mpBody")) return;
+    body.innerHTML = d.withdrawals.length ? d.withdrawals.map((w) => `<tr>
+      <td><b>${esc(w.store_name)}</b><br><small>${esc(w.owner_email)}</small></td><td><b>${money(w.amount)}</b></td>
+      <td>${esc(w.method)}<br><b>${esc(w.account)}</b></td><td>${dstr(w.created_at)}</td>
+      <td><span class="pill ${w.status === "approved" ? "good" : w.status === "rejected" ? "bad" : "warn"}">${w.status === "approved" ? "paid" : esc(w.status)}</span>${w.admin_note ? `<br><small>${esc(w.admin_note)}</small>` : ""}</td>
+      <td style="white-space:nowrap">${w.status === "pending" ? `<button class="btn btn-sm btn-primary" data-wact="approve" data-wid="${w.id}" data-amt="${w.amount}">Approve</button> <button class="btn btn-sm btn-ghost" data-wact="reject" data-wid="${w.id}">Reject</button>` : "-"}</td></tr>`).join("")
+      : `<tr><td colspan="6"><div class="empty">No withdrawal requests.</div></td></tr>`;
+  } catch (e) { body.innerHTML = `<tr><td colspan="6"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+function mpWithdrawalAction(id, act, amt) {
+  const run = async (note) => { try { const r = await api(`/api/admin/withdrawals/${id}/${act}`, { method: "POST", body: JSON.stringify({ note }) }); toast(r.message); mpLoadWithdrawals(); } catch (e) { toast(e.message, "error"); } };
+  if (act === "approve") return mpAsk("Approve withdrawal", `Send ${money(amt)} to the seller first, then paste the transaction ID here (optional).`, "Mark as paid", run);
+  return mpAsk("Reject withdrawal", "Reason (the amount goes back to the seller's wallet)", "Reject", run);
+}
+
+function vMarket() {
+  return head("Marketplace", "Commission, payouts and review moderation") + `<div id="mpBody"><section class="card"><div class="empty">Loading...</div></section></div>`;
+}
+async function mpLoadMarket() {
+  const box = $("#mpBody"); if (!box) return;
+  try {
+    const d = await api("/api/admin/marketplace");
+    if (!$("#mpBody")) return;
+    const sc = d.seller_counts || {}, wd = d.withdrawals || {};
+    const st = (l, v) => `<div class="card" style="padding:14px"><small>${l}</small><div style="font-size:20px;font-weight:700">${v}</div></div>`;
+    box.innerHTML = `
+    <div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin-bottom:14px">
+      ${st("Commission earned", money(d.commission_earned))}${st("Seller sales (delivered)", money(d.seller_sales))}
+      ${st("Pending sellers", sc.pending || 0)}${st("Approved sellers", sc.approved || 0)}
+      ${st("Withdrawals waiting", (wd.pending?.count || 0) + " · " + money(wd.pending?.amount))}${st("Total paid out", money(wd.approved?.amount))}
+    </div>
+    <section class="card"><form class="form" id="mpSet" style="padding:16px">
+      <label>Platform commission (%)<input id="mpComm" type="number" min="0" max="90" step="0.5" value="${esc(d.settings.commission_percent)}"></label>
+      <label>Minimum withdrawal (৳)<input id="mpMin" type="number" min="0" step="1" value="${esc(d.settings.min_withdrawal)}"></label>
+      <label class="full" style="flex-direction:row;align-items:center;gap:8px"><input id="mpReq" type="checkbox" style="width:auto"${d.settings.reviews_require_purchase === "true" ? " checked" : ""}> Only customers who received the product can review it</label>
+      <div class="full"><button class="btn btn-primary" type="submit">Save settings</button> <small>New commission applies to future deliveries only.</small></div>
+    </form></section>
+    <section class="card table-card" style="margin-top:14px"><div style="padding:14px 16px;font-weight:700">Latest reviews</div><div class="tscroll"><table><thead><tr><th>Product</th><th>Rating</th><th>Review</th><th>By</th><th></th></tr></thead><tbody>
+    ${d.reviews.length ? d.reviews.map((r) => `<tr><td>${esc(r.product_name)}</td><td style="color:#f5a524">${"★".repeat(r.rating)}${"☆".repeat(5 - r.rating)}</td>
+      <td>${r.title ? `<b>${esc(r.title)}</b><br>` : ""}${esc(r.comment)}</td><td>${esc(r.user_name)}${r.verified_purchase ? '<br><small>Verified purchase</small>' : ""}<br><small>${dshort(r.created_at)}</small></td>
+      <td><button class="btn btn-sm btn-ghost" data-rdel="${r.id}">Remove</button></td></tr>`).join("") : `<tr><td colspan="5"><div class="empty">No reviews yet.</div></td></tr>`}
+    </tbody></table></div></section>`;
+    $("#mpSet").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const r = await api("/api/admin/marketplace/settings", { method: "PUT", body: JSON.stringify({ commission_percent: $("#mpComm").value, min_withdrawal: $("#mpMin").value, reviews_require_purchase: $("#mpReq").checked }) });
+        toast(r.message);
+      } catch (err) { toast(err.message, "error"); }
+    });
+  } catch (e) { box.innerHTML = `<section class="card"><div class="empty">${esc(e.message)}</div></section>`; }
+}
+
+function mpWire(k) {
+  if (!["sellers", "withdrawals", "marketplace"].includes(k)) return;
+  if (k === "sellers") { mpLoadSellers(); const f = $("#mpSellerFilter"); if (f) f.addEventListener("change", (e) => { MP.sellerFilter = e.target.value; mpLoadSellers(); }); }
+  if (k === "withdrawals") { mpLoadWithdrawals(); const f = $("#mpWdFilter"); if (f) f.addEventListener("change", (e) => { MP.wdFilter = e.target.value; mpLoadWithdrawals(); }); }
+  if (k === "marketplace") mpLoadMarket();
+}
+/* one delegated listener for all marketplace buttons (registered once) */
+document.addEventListener("click", (e) => {
+  const s = e.target.closest("[data-sact]"); if (s) return mpSellerAction(s.dataset.sid, s.dataset.sact);
+  const w = e.target.closest("[data-wact]"); if (w) return mpWithdrawalAction(w.dataset.wid, w.dataset.wact, w.dataset.amt);
+  const r = e.target.closest("[data-rdel]");
+  if (r && confirm("Remove this review?")) api(`/api/admin/reviews/${r.dataset.rdel}`, { method: "DELETE" }).then(() => { toast("Review removed"); mpLoadMarket(); }).catch((err) => toast(err.message, "error"));
+});
+
 const ROUTES = {
   dashboard: { t: "Dashboard", i: "dashboard", v: vDashboard },
   products: { t: "Products", i: "products", v: vProducts },
@@ -418,9 +548,12 @@ const ROUTES = {
   recent: { t: "Recent Orders", i: "recent", v: vRecent },
   revenue: { t: "Revenue by Category", i: "revenue", v: vRevenue },
   messages: { t: "Messages", i: "chat", v: vMessages },
-  settings: { t: "Settings", i: "settings", v: vSettings }
+  settings: { t: "Settings", i: "settings", v: vSettings },
+  sellers: { t: "Sellers", i: "sellers", v: vSellers },
+  withdrawals: { t: "Withdrawals", i: "wallet", v: vWithdrawals },
+  marketplace: { t: "Marketplace", i: "star", v: vMarket }
 };
-const MAIN = ["dashboard", "products", "orders", "messages", "customers", "analytics"];
+const MAIN = ["dashboard", "products", "orders", "messages", "customers", "sellers", "withdrawals", "marketplace", "analytics"];
 const REPORTS = ["lowstock", "recent", "revenue"];
 const curRoute = () => { const k = (location.hash || "#dashboard").slice(1); return ROUTES[k] ? k : "dashboard"; };
 
@@ -442,7 +575,7 @@ function renderView() {
   else if (S.loading && !S.loaded) view.innerHTML = head(ROUTES[k].t, "Loading your store data...") + statePanel('<div class="spinner"></div>Loading...');
   else if (S.error && !S.loaded) view.innerHTML = head(ROUTES[k].t, "Something went wrong") + statePanel(`<div>${esc(S.error)}</div><button class="btn btn-primary" id="retryBtn">Try again</button>`);
   else view.innerHTML = ROUTES[k].v();
-  paintCharts(); wire(k);
+  paintCharts(); wire(k); mpWire(k);
   setBadge(C.unread);
   if (k === "messages") chatStart();
 }
