@@ -530,7 +530,7 @@ function orderModal(o) {
   <dl class="detail">
     <dt>Customer</dt><dd>${esc(o.customer_name)}</dd><dt>Phone</dt><dd>${esc(o.phone || "-")}</dd>
     <dt>Address</dt><dd>${esc(o.address || "-")}${o.city ? ", " + esc(o.city) : ""}</dd>
-    <dt>Placed</dt><dd>${dstr(o.created_at)}</dd><dt>Payment</dt><dd>${esc(String(o.payment_method || "cod").toUpperCase())}</dd>
+    <dt>Placed</dt><dd>${dstr(o.created_at)}</dd><dt>Payment</dt><dd>${esc(String(o.payment_method || "cod").toUpperCase())}</dd>${o.payment_trx_id ? `<dt>TrxID</dt><dd><b>${esc(o.payment_trx_id)}</b></dd><dt>Paid from</dt><dd>${esc(o.payment_sender || "-")}</dd>` : ""}
     <dt>Items</dt><dd class="items">${items.length ? items.map((it) => `<div><span>${esc(it.name || it.product_name)} × ${it.quantity}</span><span>${money(it.subtotal)}</span></div>`).join("") : "-"}</dd>
     <dt>Subtotal</dt><dd>${money(o.subtotal)}</dd><dt>Delivery</dt><dd>${money(o.delivery_fee)}</dd><dt>Total</dt><dd><b>${money(o.total)}</b></dd>
     <dt>Status</dt><dd class="status-row"><select class="sel" id="stSel" aria-label="Order status">${opts}</select><button class="btn btn-sm btn-primary" id="stSave">Update</button>${o.status === "pending" ? '<button class="btn btn-sm btn-soft" id="stApprove">Approve</button>' : ""}</dd>
