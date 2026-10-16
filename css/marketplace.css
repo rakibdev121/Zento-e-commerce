@@ -29,3 +29,14 @@
 .mp-vp{color:#0a8f5b;font-weight:700}
 .mp-sell a{font-weight:700}
 .mp-toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#0f1a33;color:#fff;padding:10px 16px;border-radius:10px;z-index:9999;font-size:13px}
+
+/* ---------- checkout coupon box ---------- */
+.coupon-box{margin:14px 0 0;padding:12px;border:1px dashed var(--line);border-radius:12px}
+.coupon-box label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px}
+.coupon-row{display:flex;gap:8px}
+.coupon-row input{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;text-transform:uppercase;background:transparent;color:inherit}
+.coupon-row button{border:0;border-radius:10px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer;background:var(--ink,#0f1a33);color:#fff}
+.coupon-msg{margin:8px 0 0;font-size:12px;min-height:16px}
+.coupon-msg.ok{color:#0a8f5b}
+.coupon-msg.bad{color:#c62839}
+.coupon-discount-row strong{color:#0a8f5b}
