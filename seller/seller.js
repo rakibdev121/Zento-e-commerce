@@ -63,20 +63,32 @@ $("#logoutBtn").addEventListener("click", () => logout());
 function busy(btn, on, label) { btn.disabled = on; if (label) btn.textContent = on ? "Please wait..." : label; }
 
 /* ---------- screens ---------- */
-function showLogin() {
+function authShell(mode) {
   $("#tabs").hidden = true; $("#logoutBtn").hidden = true;
   app.innerHTML = `
   <section class="card narrow">
-    <h1>Sell on Zento</h1>
-    <p class="muted">Open your own store, add products and get paid. Log in with your Zento account to begin.</p>
+    <h1>Zento Seller Center</h1>
+    <p class="muted">Sell your products on Zento. Apply once, and our team will send you your login ID and password.</p>
+    <div class="seg" role="tablist">
+      <button type="button" data-m="login" class="${mode === "login" ? "on" : ""}">Seller login</button>
+      <button type="button" data-m="apply" class="${mode === "apply" ? "on" : ""}">Apply as seller</button>
+    </div>
+    <div id="authBody"></div>
+  </section>`;
+  app.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => authShell(b.dataset.m)));
+  return $("#authBody");
+}
+
+function showLogin() {
+  const body = authShell("login");
+  body.innerHTML = `
     <form id="loginForm">
-      <label>Email<input type="email" id="lEmail" autocomplete="username" required></label>
+      <label>Login ID (email)<input type="email" id="lEmail" autocomplete="username" required></label>
       <label>Password<input type="password" id="lPass" autocomplete="current-password" required></label>
       <button class="btn block" type="submit">Log in</button>
       <div class="err" id="lErr"></div>
     </form>
-    <p class="small muted">No account yet? <a href="/">Create one on the store</a> first, then come back here and apply as a seller.</p>
-  </section>`;
+    <p class="small muted">Got your ID and password from Zento? Enter them above. No ID yet? Tap <b>Apply as seller</b>.</p>`;
   $("#loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const btn = e.submitter || $("#loginForm button"); busy(btn, true, "Log in");
@@ -89,6 +101,80 @@ function showLogin() {
       start();
     } catch (err) { $("#lErr").textContent = err.message; busy(btn, false, "Log in"); }
   });
+}
+
+function showApply() {
+  const body = authShell("apply");
+  body.innerHTML = `
+    <form id="pubForm">
+      <label>Your full name<input id="pOwner" maxlength="80" autocomplete="name" required></label>
+      <label>Store name<input id="pStore" maxlength="60" required></label>
+      <label>Email (this will be your login ID)<input id="pEmail" type="email" autocomplete="email" required></label>
+      <label>Phone<input id="pPhone" type="tel" autocomplete="tel" required></label>
+      <div class="row2">
+        <label>City<input id="pCity"></label>
+        <label>Address<input id="pAddr"></label>
+      </div>
+      <label>NID / Trade licence number (optional)<input id="pId" maxlength="40"></label>
+      <label>What will you sell?<textarea id="pDesc" maxlength="800"></textarea></label>
+      <button class="btn block" type="submit">Submit application</button>
+      <div class="err" id="pErr"></div>
+    </form>`;
+  $("#pubForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("#pubForm button[type=submit]"); busy(btn, true, "Submit application");
+    try {
+      const res = await fetch(API + "/api/seller/apply-public", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner_name: $("#pOwner").value, store_name: $("#pStore").value, email: $("#pEmail").value,
+          phone: $("#pPhone").value, city: $("#pCity").value, address: $("#pAddr").value,
+          id_number: $("#pId").value, description: $("#pDesc").value }) });
+      const data = await res.json();
+      if (!res.ok || data.status !== "success") throw new Error(data.message || "Could not submit");
+      showApplied(data.message);
+    } catch (err) { $("#pErr").textContent = err.message; busy(btn, false, "Submit application"); }
+  });
+}
+
+function showApplied(msg) {
+  const body = authShell("apply");
+  body.innerHTML = `<div class="okbox"><b>Application received</b><p>${esc(msg)}</p>
+    <p class="small muted">Keep your phone and email handy. After approval you will receive a login ID and a temporary password.</p></div>
+    <button class="btn ghost block" id="toLogin">Go to seller login</button>`;
+  $("#toLogin").addEventListener("click", showLogin);
+}
+
+function showChangePassword(forced) {
+  $("#tabs").hidden = true; $("#logoutBtn").hidden = false;
+  app.innerHTML = `
+  <section class="card narrow">
+    <h1>${forced ? "Set your own password" : "Change password"}</h1>
+    ${forced ? '<p class="muted">You logged in with a temporary password. Choose a new one to continue.</p>' : ""}
+    <form id="cpForm">
+      <label>Current (temporary) password<input type="password" id="cpOld" autocomplete="current-password" required></label>
+      <label>New password (min 8 characters)<input type="password" id="cpNew" minlength="8" autocomplete="new-password" required></label>
+      <label>Repeat new password<input type="password" id="cpNew2" minlength="8" autocomplete="new-password" required></label>
+      <button class="btn block" type="submit">Save password</button>
+      <div class="err" id="cpErr"></div>
+    </form>
+  </section>`;
+  $("#cpForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("#cpForm button"); 
+    if ($("#cpNew").value !== $("#cpNew2").value) { $("#cpErr").textContent = "The two new passwords do not match"; return; }
+    busy(btn, true, "Save password");
+    try {
+      await call("/api/seller/change-password", { method: "POST", body: JSON.stringify({ current_password: $("#cpOld").value, new_password: $("#cpNew").value }) });
+      toast("Password changed"); start();
+    } catch (err) { $("#cpErr").textContent = err.message; busy(btn, false, "Save password"); }
+  });
+}
+
+function notSellerScreen() {
+  $("#tabs").hidden = true; $("#logoutBtn").hidden = false;
+  app.innerHTML = `<section class="card narrow center"><h1>This is not a seller account</h1>
+    <p class="muted">You are logged in with a customer account. Log out and use the seller ID and password sent to you by Zento, or apply as a seller.</p>
+    <button class="btn" id="nsOut">Log out</button></section>`;
+  $("#nsOut").addEventListener("click", () => logout());
 }
 
 function applyForm(prefill = {}, note = "") {
@@ -310,7 +396,10 @@ function viewProfile() {
       <label>Account number<input id="sPA" value="${esc(s.payout_account)}" placeholder="01XXXXXXXXX or bank details"></label>
     </div>
     <button class="btn block" type="submit">Save</button><div class="err" id="sErr"></div>
-  </form>`;
+  </form>
+  <div class="card"><h2>Account</h2><p class="muted small" style="margin:0 0 8px">Login ID: <b>${esc(S.me.login_id || "")}</b></p>
+    <button class="btn ghost" id="chgPw" type="button">Change password</button></div>`;
+  $("#chgPw").addEventListener("click", () => showChangePassword(false));
   const files = {};
   [["sLogo", "sLogoP", "logo"], ["sBanner", "sBannerP", "banner"]].forEach(([inp, prev, key]) => {
     $("#" + inp).addEventListener("change", (e) => {
@@ -339,7 +428,8 @@ async function start() {
     await loadMe();
   } catch (err) { if (!store.get(TOKEN_KEY)) return showLogin(); app.innerHTML = `<div class="card center"><p class="err">${esc(err.message)}</p><button class="btn ghost" onclick="location.reload()">Reload</button></div>`; return; }
   const seller = S.me.seller;
-  if (!seller) return applyForm();
+  if (!seller) return notSellerScreen();
+  if (seller.must_change_password) return showChangePassword(true);
   if (seller.status !== "approved") return statusScreen(seller);
   const h = (location.hash || "").slice(1);
   go(TABS.some(([k]) => k === h) ? h : "overview");
