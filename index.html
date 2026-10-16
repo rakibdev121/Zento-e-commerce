@@ -13,8 +13,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
-  <link rel="stylesheet" href="css/style.css?v=20261010-1">
-  <link rel="stylesheet" href="css/marketplace.css?v=2">
+  <link rel="stylesheet" href="css/style.css?v=20261016-1">
+  <link rel="stylesheet" href="css/marketplace.css?v=1">
 </head>
 
 <body>
@@ -641,28 +641,27 @@
 
         <div id="checkoutItems"></div>
 
-        <div class="coupon-box">
-          <label for="couponInput">Have a coupon code?</label>
-          <div class="coupon-row">
-            <input type="text" id="couponInput" placeholder="Enter code" autocomplete="off" autocapitalize="characters" maxlength="40">
-            <button type="button" id="couponApply">Apply</button>
-          </div>
-          <p id="couponMsg" class="coupon-msg" role="status"></p>
-        </div>
-
         <div class="checkout-total-row">
           <span>Subtotal</span>
           <strong id="checkoutSubtotal">৳0.00</strong>
         </div>
 
-        <div class="checkout-total-row coupon-discount-row" id="couponDiscountRow" hidden>
-          <span id="couponDiscountLabel">Coupon discount</span>
-          <strong id="checkoutDiscount">-৳0.00</strong>
-        </div>
-
         <div class="checkout-total-row">
           <span>Delivery</span>
           <strong id="checkoutDelivery">৳0.00</strong>
+        </div>
+
+        <div class="checkout-total-row" id="checkoutDiscountRow" hidden>
+          <span id="checkoutDiscountLabel">Coupon discount</span>
+          <strong id="checkoutDiscount" class="discount-green">-৳0.00</strong>
+        </div>
+
+        <div class="coupon-box">
+          <div class="coupon-row">
+            <input id="couponInput" type="text" placeholder="Coupon code" autocomplete="off" maxlength="30" aria-label="Coupon code">
+            <button type="button" id="couponApply">Apply</button>
+          </div>
+          <small id="couponMsg" class="coupon-msg" role="status"></small>
         </div>
 
         <div class="checkout-grand-total">
@@ -754,7 +753,7 @@
 
   <script src="js/dynamic-products.js"></script>
   <script src="js/app.js"></script>
-  <script src="js/profile-checkout.js?v=2"></script>
+  <script src="js/profile-checkout.js?v=20261016-1"></script>
   <script src="js/support-config.js"></script>
   <script src="js/chat.js"></script>
   <script src="js/support.js"></script>
