@@ -53,3 +53,14 @@
 3. Approve korle ekta box-e **Login ID + Password** dekhabe. **Copy** kore seller ke WhatsApp/SMS-e pathan (password ekbar-i dekhay).
 4. Seller `/seller/` e **Seller login** diye dhukbe. Prothom login-e nijer notun password dite hobe.
 5. Kono SQL chalate hobe na. Server start holei `seller_applications` table auto toiri hoy.
+
+## Notun: Coupon system (update)
+**Seller coupon** (Seller dashboard > Coupons): shudhu oi seller-er product-e kaj kore. Discount **seller-er nijer**.
+Commission customer jei dam-e kinse (discount-er por) setar upor kata hoy.
+Udahoron: 1000 tk product, 10% seller coupon: customer dey 900, commission 10% = 90, seller pay 810.
+
+**Admin coupon** (Admin panel > Coupons): shob product-e kaj kore. Discount **Zento-r pocket theke**.
+Seller port tar full tk-i pay (commission ager moto 1000 tk-er upor). Udahoron: 1000 tk, admin coupon 100 tk: customer dey 900, commission 100, seller pay 900, Zento-r net 100 - 100 = 0.
+
+Coupon-e thake: percent/fixed, max discount, minimum order, kotobar use hobe, prottek customer kotobar, start/end date, on/off.
+Delivery fee ager moto original subtotal dhore hoy (discount-er age). Kono SQL lagbe na, server start holei `coupons` table auto toiri hoy.
