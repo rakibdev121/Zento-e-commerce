@@ -515,6 +515,79 @@ function mpAppAction(id, act, store) {
   }
 }
 
+/* ---------- Coupons (admin coupons are paid by Zento; seller coupons by the seller) ---------- */
+const cpDate = (v) => { if (!v) return ""; const d = new Date(v); return isNaN(d) ? "" : d.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" }); };
+const cpValue = (c) => c.discount_type === "percent" ? `${Number(c.value)}%${c.max_discount != null ? ` (max ${money(c.max_discount)})` : ""}` : money(c.value);
+const cpState = (c) => {
+  const now = Date.now();
+  if (!c.active) return ["Off", "bad"];
+  if (c.expires_at && new Date(c.expires_at) < now) return ["Expired", "bad"];
+  if (c.starts_at && new Date(c.starts_at) > now) return ["Scheduled", "warn"];
+  if (c.usage_limit != null && c.used_count >= c.usage_limit) return ["Fully used", "warn"];
+  return ["Live", "good"];
+};
+function vCoupons() {
+  return head("Coupons", "Admin coupons are paid by Zento. Sellers still get their full price.", `<button class="btn btn-primary" id="cpNew">+ New coupon</button>`) + `
+  <section class="card table-card"><div class="tscroll"><table><thead><tr><th>Code</th><th>Discount</th><th>Paid by</th><th>Used</th><th>Discount given</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody id="mpBody"><tr><td colspan="7"><div class="empty">Loading...</div></td></tr></tbody></table></div></section>`;
+}
+async function mpLoadCoupons() {
+  const body = $("#mpBody"); if (!body) return;
+  try {
+    const d = await api("/api/admin/coupons");
+    if (!$("#mpBody")) return;
+    MP.coupons = d.coupons;
+    body.innerHTML = d.coupons.length ? d.coupons.map((c) => {
+      const [st, cls] = cpState(c);
+      const mine = c.seller_id == null;
+      return `<tr><td><b>${esc(c.code)}</b>${Number(c.min_order) > 0 ? `<br><small>Min order ${money(c.min_order)}</small>` : ""}
+        <br><small>${c.starts_at ? "From " + cpDate(c.starts_at) + " " : ""}${c.expires_at ? "Until " + cpDate(c.expires_at) : "No expiry"}</small></td>
+        <td>${esc(cpValue(c))}</td>
+        <td>${mine ? '<span class="pill info">Zento</span>' : `<span class="pill warn">Seller</span><br><small>${esc(c.store_name || "")}</small>`}</td>
+        <td>${c.used_count}${c.usage_limit != null ? " / " + c.usage_limit : ""}<br><small>${c.per_user_limit} per customer</small></td>
+        <td>${money(c.discount_given)}</td>
+        <td><span class="pill ${cls}">${st}</span></td>
+        <td style="white-space:nowrap">${mine ? `<button class="btn btn-sm btn-ghost" data-cact="edit" data-cid="${c.id}">Edit</button> ` : ""}
+          <button class="btn btn-sm btn-ghost" data-cact="${c.active ? "off" : "on"}" data-cid="${c.id}">${c.active ? "Turn off" : "Turn on"}</button>
+          <button class="btn btn-sm btn-ghost" data-cact="del" data-cid="${c.id}">Delete</button></td></tr>`;
+    }).join("") : `<tr><td colspan="7"><div class="empty">No coupons yet. Tap "+ New coupon".</div></td></tr>`;
+  } catch (e) { body.innerHTML = `<tr><td colspan="7"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+function mpCouponForm(c) {
+  const v = c || { discount_type: "percent", per_user_limit: 1, active: true };
+  showModal(`<div class="modal-h"><h2>${c ? "Edit coupon" : "New coupon (paid by Zento)"}</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div>
+  <div class="modal-b"><div class="form">
+    <label class="full">Coupon code<input id="cpCode" maxlength="40" value="${esc(v.code || "")}" placeholder="EID20" style="text-transform:uppercase"></label>
+    <label>Type<select id="cpType"><option value="percent"${v.discount_type === "percent" ? " selected" : ""}>Percent (%)</option><option value="fixed"${v.discount_type === "fixed" ? " selected" : ""}>Fixed amount (BDT)</option></select></label>
+    <label>Value<input id="cpValue" type="number" min="0" step="0.01" value="${v.value ?? ""}"></label>
+    <label>Max discount (BDT, percent only)<input id="cpMax" type="number" min="0" step="0.01" value="${v.max_discount ?? ""}" placeholder="optional"></label>
+    <label>Minimum order (BDT)<input id="cpMin" type="number" min="0" step="0.01" value="${Number(v.min_order) || ""}" placeholder="0"></label>
+    <label>Total uses allowed<input id="cpLimit" type="number" min="0" step="1" value="${v.usage_limit ?? ""}" placeholder="unlimited"></label>
+    <label>Uses per customer<input id="cpPer" type="number" min="1" step="1" value="${v.per_user_limit ?? 1}"></label>
+    <label>Starts on<input id="cpStart" type="date" value="${cpDate(v.starts_at)}"></label>
+    <label>Ends on<input id="cpEnd" type="date" value="${cpDate(v.expires_at)}"></label>
+  </div><p id="cpErr" class="muted" style="color:#c62839;min-height:18px"></p></div>
+  <div class="modal-f"><button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" id="cpSave">${c ? "Save" : "Create coupon"}</button></div>`);
+  $("#cpSave").addEventListener("click", async () => {
+    const body = { code: $("#cpCode").value, discount_type: $("#cpType").value, value: $("#cpValue").value, max_discount: $("#cpMax").value,
+      min_order: $("#cpMin").value, usage_limit: $("#cpLimit").value, per_user_limit: $("#cpPer").value,
+      starts_at: $("#cpStart").value, expires_at: $("#cpEnd").value, active: c ? c.active : true };
+    try {
+      const r = await api(c ? `/api/admin/coupons/${c.id}` : "/api/admin/coupons", { method: c ? "PUT" : "POST", body: JSON.stringify(body) });
+      closeModal(); toast(r.message); mpLoadCoupons();
+    } catch (e) { $("#cpErr").textContent = e.message; }
+  });
+}
+async function mpCouponAction(id, act) {
+  const c = (MP.coupons || []).find((x) => String(x.id) === String(id));
+  try {
+    if (act === "edit") return mpCouponForm(c);
+    if (act === "on" || act === "off") { const r = await api(`/api/admin/coupons/${id}`, { method: "PUT", body: JSON.stringify({ active: act === "on" }) }); toast(r.message); }
+    if (act === "del") { if (!confirm("Delete this coupon?")) return; const r = await api(`/api/admin/coupons/${id}`, { method: "DELETE" }); toast(r.message); }
+    mpLoadCoupons();
+  } catch (e) { toast(e.message, "error"); }
+}
+
 function vWithdrawals() {
   const opts = [["pending", "Pending"], ["approved", "Paid"], ["rejected", "Rejected"], ["", "All"]]
     .map(([v, l]) => `<option value="${v}"${v === MP.wdFilter ? " selected" : ""}>${l}</option>`).join("");
@@ -579,7 +652,8 @@ async function mpLoadMarket() {
 }
 
 function mpWire(k) {
-  if (!["sellers", "withdrawals", "marketplace", "applications"].includes(k)) return;
+  if (!["sellers", "withdrawals", "marketplace", "applications", "coupons"].includes(k)) return;
+  if (k === "coupons") { mpLoadCoupons(); const b = $("#cpNew"); if (b) b.addEventListener("click", () => mpCouponForm()); }
   if (k === "applications") { mpLoadApps(); const f = $("#mpAppFilter"); if (f) f.addEventListener("change", (e) => { MP.appFilter = e.target.value; mpLoadApps(); }); }
   if (k === "sellers") { mpLoadSellers(); const f = $("#mpSellerFilter"); if (f) f.addEventListener("change", (e) => { MP.sellerFilter = e.target.value; mpLoadSellers(); }); }
   if (k === "withdrawals") { mpLoadWithdrawals(); const f = $("#mpWdFilter"); if (f) f.addEventListener("change", (e) => { MP.wdFilter = e.target.value; mpLoadWithdrawals(); }); }
@@ -587,6 +661,7 @@ function mpWire(k) {
 }
 /* one delegated listener for all marketplace buttons (registered once) */
 document.addEventListener("click", (e) => {
+  const cp = e.target.closest("[data-cact]"); if (cp) return mpCouponAction(cp.dataset.cid, cp.dataset.cact);
   const ap = e.target.closest("[data-aact]"); if (ap) return mpAppAction(ap.dataset.aid, ap.dataset.aact, ap.dataset.astore);
   const s = e.target.closest("[data-sact]"); if (s) return mpSellerAction(s.dataset.sid, s.dataset.sact);
   const w = e.target.closest("[data-wact]"); if (w) return mpWithdrawalAction(w.dataset.wid, w.dataset.wact, w.dataset.amt);
@@ -608,9 +683,10 @@ const ROUTES = {
   applications: { t: "Seller Applications", i: "sellers", v: vApplications },
   sellers: { t: "Sellers", i: "sellers", v: vSellers },
   withdrawals: { t: "Withdrawals", i: "wallet", v: vWithdrawals },
+  coupons: { t: "Coupons", i: "star", v: vCoupons },
   marketplace: { t: "Marketplace", i: "star", v: vMarket }
 };
-const MAIN = ["dashboard", "products", "orders", "messages", "customers", "applications", "sellers", "withdrawals", "marketplace", "analytics"];
+const MAIN = ["dashboard", "products", "orders", "messages", "customers", "applications", "sellers", "withdrawals", "coupons", "marketplace", "analytics"];
 const REPORTS = ["lowstock", "recent", "revenue"];
 const curRoute = () => { const k = (location.hash || "#dashboard").slice(1); return ROUTES[k] ? k : "dashboard"; };
 
@@ -820,7 +896,7 @@ function orderModal(o) {
     <dt>Address</dt><dd>${esc(o.address || "-")}${o.city ? ", " + esc(o.city) : ""}</dd>
     <dt>Placed</dt><dd>${dstr(o.created_at)}</dd><dt>Payment</dt><dd>${esc(String(o.payment_method || "cod").toUpperCase())}</dd>${o.payment_trx_id ? `<dt>TrxID</dt><dd><b>${esc(o.payment_trx_id)}</b></dd><dt>Paid from</dt><dd>${esc(o.payment_sender || "-")}</dd>` : ""}
     <dt>Items</dt><dd class="items">${items.length ? items.map((it) => `<div><span>${esc(it.name || it.product_name)} × ${it.quantity}</span><span>${money(it.subtotal)}</span></div>`).join("") : "-"}</dd>
-    <dt>Subtotal</dt><dd>${money(o.subtotal)}</dd><dt>Delivery</dt><dd>${money(o.delivery_fee)}</dd><dt>Total</dt><dd><b>${money(o.total)}</b></dd>
+    <dt>Subtotal</dt><dd>${money(o.subtotal)}</dd>${Number(o.discount_total) > 0 ? `<dt>Coupon ${esc(o.coupon_code)}</dt><dd>-${money(o.discount_total)}</dd>` : ""}<dt>Delivery</dt><dd>${money(o.delivery_fee)}</dd><dt>Total</dt><dd><b>${money(o.total)}</b></dd>
     <dt>Status</dt><dd class="status-row"><select class="sel" id="stSel" aria-label="Order status">${opts}</select><button class="btn btn-sm btn-primary" id="stSave">Update</button>${o.status === "pending" ? '<button class="btn btn-sm btn-soft" id="stApprove">Approve</button>' : ""}</dd>
   </dl><div class="modal-f"><button class="btn btn-ghost" data-close>Close</button></div>`);
   const run = async (fn, msg) => {
