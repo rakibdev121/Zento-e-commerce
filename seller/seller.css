@@ -81,3 +81,8 @@ th,td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
   .card{padding:14px}
   input,select,textarea{font-size:16px}
 }
+
+.profit-box{margin-top:12px;padding:12px;border:1px dashed var(--line);border-radius:12px;font-size:13px}
+.profit-box div{display:flex;justify-content:space-between;gap:10px;padding:2px 0}
+.profit-box .tot{border-top:1px solid var(--line);margin-top:4px;padding-top:6px;font-weight:700}
+.warnbox{background:var(--warn-bg);color:var(--warn);border-color:transparent}

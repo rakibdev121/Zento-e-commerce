@@ -235,7 +235,7 @@ async function go(tab) {
   app.innerHTML = `<div class="center muted">Loading...</div>`;
   try {
     if (tab === "overview") { await loadMe(); viewOverview(); }
-    if (tab === "products") { S.products = (await call("/api/seller/products")).products; viewProducts(); }
+    if (tab === "products") { await loadMe(); S.products = (await call("/api/seller/products")).products; viewProducts(); }
     if (tab === "orders") { S.orders = (await call("/api/seller/orders")).orders; viewOrders(); }
     if (tab === "coupons") { S.coupons = (await call("/api/seller/coupons")).coupons; viewCoupons(); }
     if (tab === "wallet") { S.wallet = await call("/api/seller/wallet"); await loadMe(); viewWallet(); }
@@ -254,12 +254,14 @@ function viewOverview() {
     <div class="stat hi"><small>Available balance</small><b>${money(w.available)}</b></div>
     <div class="stat"><small>Pending (not delivered)</small><b>${money(w.pending_earnings)}</b></div>
     <div class="stat"><small>Total earned</small><b>${money(w.total_earned)}</b></div>
+    <div class="stat"><small>Total profit (after cost)</small><b class="${Number(m.profit_total) >= 0 ? "amt-plus" : "amt-minus"}">${money(m.profit_total)}</b><small>delivered orders only</small></div>
     <div class="stat"><small>Commission paid (${w.commission_percent}%)</small><b>${money(w.commission_paid)}</b></div>
     <div class="stat"><small>Products</small><b>${m.product_count}</b></div>
     <div class="stat"><small>Orders</small><b>${m.order_count}</b></div>
     <div class="stat"><small>Units sold</small><b>${m.units_sold}</b></div>
     <div class="stat"><small>Store rating</small><b><span class="stars">${stars(m.rating_avg)}</span> ${Number(m.rating_avg).toFixed(1)}</b><small>${m.rating_count} reviews</small></div>
   </div>
+  ${Number(m.products_missing_cost) > 0 ? `<div class="card warnbox" style="margin-top:14px"><b>${m.products_missing_cost} product(s) have no cost price.</b> Open Products and edit them to add the cost price, so your profit can be calculated.</div>` : ""}
   <div class="card" style="margin-top:14px"><h2>How you get paid</h2>
     <p class="muted" style="margin:0">When an order with your product is marked <b>delivered</b>, Zento keeps ${w.commission_percent}% and the rest is added to your balance. Then request a withdrawal from the Wallet tab.</p>
     <p class="muted small" style="margin:8px 0 0"><b>Coupons:</b> if you give a discount with your own coupon, you pay that discount. If Zento gives a discount coupon, Zento pays it and you still get your full price.</p></div>`;
@@ -268,14 +270,16 @@ function viewOverview() {
 /* products */
 function viewProducts() {
   app.innerHTML = `<div class="toolbar"><h1>My products</h1><button class="btn" id="addP">+ Add product</button></div>
-  <div class="card"><div class="tscroll"><table><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Rating</th><th></th></tr></thead><tbody>
+  <div class="card"><div class="tscroll"><table><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Cost</th><th>Profit / unit</th><th>Stock</th><th>Rating</th><th></th></tr></thead><tbody>
   ${S.products.length ? S.products.map((p) => `<tr>
     <td><div class="pcell">${p.image_url ? `<img src="${esc(p.image_url)}" alt="">` : '<span class="thumb">🛍️</span>'}<b>${esc(p.name)}</b></div></td>
     <td>${esc(p.category || "-")}</td><td>${money(p.price)}</td>
+    <td>${p.cost_price == null ? '<span class="pill warn">Add cost</span>' : money(p.cost_price)}</td>
+    <td>${p.profit_per_unit == null ? '<span class="muted small">-</span>' : `<span class="${Number(p.profit_per_unit) >= 0 ? "amt-plus" : "amt-minus"}">${money(p.profit_per_unit)}</span>`}</td>
     <td>${Number(p.stock) <= 0 ? '<span class="pill bad">Out</span>' : Number(p.stock) <= 5 ? `<span class="pill warn">${p.stock}</span>` : p.stock}</td>
     <td><span class="stars">${stars(p.rating_avg)}</span> <span class="muted small">(${p.rating_count})</span></td>
     <td style="white-space:nowrap"><button class="btn ghost sm" data-edit="${p.id}">Edit</button> <button class="btn danger sm" data-del="${p.id}">Delete</button></td></tr>`).join("")
-    : `<tr><td colspan="6" class="center muted">No products yet. Add your first product.</td></tr>`}
+    : `<tr><td colspan="8" class="center muted">No products yet. Add your first product.</td></tr>`}
   </tbody></table></div></div>`;
   $("#addP").addEventListener("click", () => productModal());
   app.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => productModal(S.products.find((p) => p.id == b.dataset.edit))));
@@ -300,16 +304,33 @@ function productModal(p) {
     <input type="file" id="pImg" accept="image/png,image/jpeg,image/webp">
     ${p && p.image_url ? `<img class="upload-preview" id="pPrev" src="${esc(p.image_url)}" alt="">` : '<img class="upload-preview" id="pPrev" hidden alt="">'}
     <label>Name<input id="pName" maxlength="200" value="${esc(p?.name)}" required></label>
+    <label>Category<input id="pCat" value="${esc(p?.category)}"></label>
     <div class="row2">
-      <label>Category<input id="pCat" value="${esc(p?.category)}"></label>
-      <label>Price (BDT)<input id="pPrice" type="number" min="0" step="0.01" value="${p ? p.price : ""}" required></label>
+      <label>Cost price (BDT) <span class="muted small">what you pay to buy or make it</span><input id="pCost" type="number" min="0" step="0.01" value="${p && p.cost_price != null ? p.cost_price : ""}" required></label>
+      <label>Selling price (BDT)<input id="pPrice" type="number" min="0" step="0.01" value="${p ? p.price : ""}" required></label>
     </div>
+    <div class="profit-box" id="pProfit" aria-live="polite"></div>
     <label>Stock<input id="pStock" type="number" min="0" step="1" value="${p ? p.stock : ""}" required></label>
     <label>Description<textarea id="pDesc" maxlength="3000">${esc(p?.description)}</textarea></label>
     <div class="err" id="pErr"></div>
     <div style="display:flex;gap:10px;margin-top:12px"><button type="button" class="btn ghost" id="pCancel">Cancel</button><button class="btn" style="flex:1" type="submit">Save</button></div>
   </form>`);
   let file = null;
+  const rate = Number(S.me?.wallet?.commission_percent ?? 10);
+  const showProfit = () => {
+    const price = Number($("#pPrice", bg).value), cost = Number($("#pCost", bg).value);
+    const box = $("#pProfit", bg);
+    if (!$("#pPrice", bg).value || !$("#pCost", bg).value || isNaN(price) || isNaN(cost)) { box.innerHTML = '<span class="muted small">Enter cost and selling price to see your profit.</span>'; return; }
+    const fee = Math.round(price * rate) / 100, profit = price - fee - cost;
+    const margin = price > 0 ? (profit / price) * 100 : 0;
+    box.innerHTML = `<div><span>Selling price</span><b>${money(price)}</b></div>
+      <div><span>Zento commission (${rate}%)</span><b>−${money(fee)}</b></div>
+      <div><span>Your cost</span><b>−${money(cost)}</b></div>
+      <div class="tot"><span>Profit per unit</span><b class="${profit >= 0 ? "amt-plus" : "amt-minus"}">${money(profit)} (${margin.toFixed(0)}%)</b></div>
+      ${profit < 0 ? '<p class="err" style="margin:6px 0 0;min-height:0">You will lose money on every sale at this price.</p>' : ""}`;
+  };
+  ["pPrice", "pCost"].forEach((id) => $("#" + id, bg).addEventListener("input", showProfit));
+  showProfit();
   $("#pCancel", bg).addEventListener("click", () => bg.remove());
   $("#pImg", bg).addEventListener("change", (e) => {
     file = e.target.files[0] || null;
@@ -321,7 +342,7 @@ function productModal(p) {
     try {
       let image_url = p?.image_url || "";
       if (file) image_url = await uploadImage(file);
-      const body = JSON.stringify({ name: $("#pName", bg).value, category: $("#pCat", bg).value, price: $("#pPrice", bg).value,
+      const body = JSON.stringify({ name: $("#pName", bg).value, category: $("#pCat", bg).value, price: $("#pPrice", bg).value, cost_price: $("#pCost", bg).value,
         stock: $("#pStock", bg).value, description: $("#pDesc", bg).value, image_url });
       if (p) await call(`/api/seller/products/${p.id}`, { method: "PUT", body });
       else await call("/api/seller/products", { method: "POST", body });
@@ -334,14 +355,15 @@ function productModal(p) {
 const pillFor = (s) => ({ delivered: "good", pending: "warn" }[s] || "info");
 function viewOrders() {
   app.innerHTML = `<div class="toolbar"><h1>Orders</h1></div>
-  <div class="card"><div class="tscroll"><table><thead><tr><th>Order</th><th>Product</th><th>Qty</th><th>Sale</th><th>You earn</th><th>Status</th><th>Customer</th></tr></thead><tbody>
+  <div class="card"><div class="tscroll"><table><thead><tr><th>Order</th><th>Product</th><th>Qty</th><th>Sale</th><th>You earn</th><th>Profit</th><th>Status</th><th>Customer</th></tr></thead><tbody>
   ${S.orders.length ? S.orders.map((o) => `<tr>
     <td><b>#ZT-${String(o.order_id).padStart(4, "0")}</b><br><span class="muted small">${when(o.created_at)}</span></td>
     <td>${esc(o.product_name)}</td><td>${o.quantity}</td><td>${money(o.subtotal)}</td>
     <td>${o.credited_at ? `<span class="amt-plus">${money(o.seller_earning)}</span><br><span class="muted small">−${money(o.commission_amount)} fee</span>` : '<span class="muted small">after delivery</span>'}</td>
+    <td>${o.profit == null ? '<span class="muted small">no cost</span>' : `<span class="${Number(o.profit) >= 0 ? "amt-plus" : "amt-minus"}">${money(o.profit)}</span>${o.profit_is_estimate ? '<br><span class="muted small">estimate</span>' : ""}<br><span class="muted small">cost ${money(o.cost_total)}</span>`}</td>
     <td><span class="pill ${pillFor(o.status)}">${esc(String(o.status).replace(/_/g, " "))}</span></td>
     <td>${esc(o.customer_name)}<br><span class="muted small">${esc(o.phone)}<br>${esc(o.address)}${o.city ? ", " + esc(o.city) : ""}</span></td></tr>`).join("")
-    : `<tr><td colspan="7" class="center muted">No orders yet.</td></tr>`}
+    : `<tr><td colspan="8" class="center muted">No orders yet.</td></tr>`}
   </tbody></table></div></div>`;
 }
 
