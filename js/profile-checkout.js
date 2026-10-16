@@ -332,13 +332,72 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     const delivery = subtotal >= 100 ? 0 : 5;
-    const total = subtotal + delivery;
+    const discount = Math.min(coupon.discount, subtotal);
+    const total = subtotal - discount + delivery;
 
     if (itemCount) itemCount.textContent = `${count} item${count === 1 ? "" : "s"}`;
     if (subtotalEl) subtotalEl.textContent = money(subtotal);
     if (deliveryEl) deliveryEl.textContent = delivery === 0 ? "FREE" : money(delivery);
     if (totalEl) totalEl.textContent = money(total);
+
+    const discRow = document.getElementById("couponDiscountRow");
+    const discEl = document.getElementById("checkoutDiscount");
+    const discLabel = document.getElementById("couponDiscountLabel");
+    if (discRow) discRow.hidden = !(coupon.code && discount > 0);
+    if (discEl) discEl.textContent = "-" + money(discount);
+    if (discLabel) discLabel.textContent = coupon.code ? `Coupon (${coupon.code})` : "Coupon discount";
   }
+
+  /* ---------- coupon code ---------- */
+
+  const coupon = { code: "", discount: 0 };
+  let couponTimer = null;
+
+  function setCouponMsg(text, ok) {
+    const el = document.getElementById("couponMsg");
+    if (!el) return;
+    el.textContent = text || "";
+    el.className = "coupon-msg" + (text ? (ok ? " ok" : " bad") : "");
+  }
+
+  async function checkCoupon(code, quiet) {
+    const cart = getCart();
+    if (!code || !cart.length) {
+      coupon.code = ""; coupon.discount = 0;
+      renderCheckout();
+      return;
+    }
+    try {
+      const data = await api("/api/coupons/validate", {
+        method: "POST",
+        body: JSON.stringify({ code, items: cart })
+      });
+      coupon.code = data.code;
+      coupon.discount = Number(data.discount) || 0;
+      setCouponMsg(`${data.code} applied. You save ${money(coupon.discount)}.`, true);
+    } catch (error) {
+      coupon.code = ""; coupon.discount = 0;
+      setCouponMsg(error.message, false);
+    }
+    renderCheckout();
+    updateMobilePay(document.querySelector('input[name="paymentMethod"]:checked')?.value || "cod");
+  }
+
+  document.getElementById("couponApply")?.addEventListener("click", () => {
+    const input = document.getElementById("couponInput");
+    const code = (input?.value || "").trim().toUpperCase();
+    if (input) input.value = code;
+    if (!code) { setCouponMsg("Enter a coupon code first.", false); return; }
+    setCouponMsg("Checking...", true);
+    checkCoupon(code);
+  });
+
+  document.getElementById("couponInput")?.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      document.getElementById("couponApply")?.click();
+    }
+  });
 
   /* ---------- bKash / Nagad manual payment ---------- */
 
@@ -348,7 +407,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function currentTotal() {
     const cart = getCart();
     const subtotal = cart.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
-    return subtotal + (subtotal >= 100 ? 0 : 5);
+    return subtotal - Math.min(coupon.discount, subtotal) + (subtotal >= 100 ? 0 : 5);
   }
 
   function updateMobilePay(method) {
@@ -454,6 +513,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     openPage(checkoutPage);
     renderCheckout();
+    if (coupon.code) checkCoupon(coupon.code, true);   // cart may have changed since the coupon was applied
     loadPaymentInfo();
     await loadProfile();
   }
@@ -553,6 +613,7 @@ document.addEventListener("DOMContentLoaded", () => {
           payment_method: selectedPayment,
           payment_trx_id: isMobilePay ? payTrx : "",
           payment_sender: isMobilePay ? paySender : "",
+          coupon_code: coupon.code,
           items: cart
         })
       });
@@ -568,6 +629,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (typeof window.updateCartUI === "function") {
         window.updateCartUI();
       }
+
+      coupon.code = ""; coupon.discount = 0;
+      const couponInput = document.getElementById("couponInput");
+      if (couponInput) couponInput.value = "";
+      setCouponMsg("", true);
 
       if (message) {
         message.textContent = `✓ Order #${data.order.id} placed successfully`;
