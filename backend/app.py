@@ -1553,9 +1553,10 @@ def create_order():
             # ZENTO_MARKETPLACE: remember which seller sold this item
             cursor.execute("""
                 UPDATE order_items
-                SET seller_id = (SELECT seller_id FROM products WHERE id = %s)
+                SET seller_id = (SELECT seller_id FROM products WHERE id = %s),
+                    cost_price = (SELECT cost_price FROM products WHERE id = %s)
                 WHERE order_id = %s AND product_id = %s
-            """, (item["id"], order_id, item["id"]))
+            """, (item["id"], item["id"], order_id, item["id"]))
 
             # ZENTO_MARKETPLACE: remember the coupon discount on this item
             if coupon_info and item.get("discount"):

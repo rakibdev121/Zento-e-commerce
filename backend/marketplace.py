@@ -306,6 +306,8 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_total NUMERIC(12,2) NOT NUL
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS coupon_id BIGINT;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS discount_by TEXT DEFAULT '';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(12,2);
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cost_price NUMERIC(12,2);
 """
 
 
@@ -457,6 +459,13 @@ def seller_me():
                            FROM reviews r JOIN products p ON p.id=r.product_id WHERE p.seller_id=%s""", (s["id"],))
             r = cur.fetchone()
             data["rating_avg"], data["rating_count"] = r["avg"], r["cnt"]
+            cur.execute("""SELECT COALESCE(SUM(seller_earning - cost_price * quantity), 0) AS profit,
+                                  COUNT(*) FILTER (WHERE cost_price IS NULL) AS no_cost
+                           FROM order_items WHERE seller_id=%s AND credited_at IS NOT NULL""", (s["id"],))
+            r = cur.fetchone()
+            data["profit_total"], data["profit_missing_cost_items"] = r["profit"], r["no_cost"]
+            cur.execute("SELECT COUNT(*) AS n FROM products WHERE seller_id=%s AND cost_price IS NULL", (s["id"],))
+            data["products_missing_cost"] = cur.fetchone()["n"]
             cur.execute("SELECT value FROM marketplace_settings WHERE key='min_withdrawal'")
             m = cur.fetchone()
             data["min_withdrawal"] = Decimal(m["value"]) if m else Decimal(DEFAULT_SETTINGS["min_withdrawal"])
@@ -489,6 +498,32 @@ def seller_update_me():
 # ---------------------------------------------------------------------
 # SELLER: products
 # ---------------------------------------------------------------------
+def unit_profit(price, cost, rate):
+    """Seller profit on one unit at full price: price - Zento commission - cost. None if cost unknown."""
+    if cost is None:
+        return None
+    price, cost = Decimal(str(price)), Decimal(str(cost))
+    return price - q2(price * Decimal(str(rate)) / 100) - cost
+
+
+def item_profit(row, rate):
+    """
+    Profit for one order line. Uses the real wallet credit once delivered,
+    otherwise an estimate. Returns (profit or None, is_estimate).
+    """
+    cost = row.get("cost_price")
+    if cost is None:
+        return None, False
+    cost_total = Decimal(str(cost)) * int(row["quantity"])
+    if row.get("credited_at"):
+        return Decimal(str(row["seller_earning"])) - cost_total, False
+    gross = Decimal(str(row["subtotal"]))
+    disc = Decimal(str(row.get("discount_amount") or 0))
+    base = gross - disc if row.get("discount_by") == "seller" else gross
+    earning = base - q2(base * Decimal(str(rate)) / 100)
+    return earning - cost_total, True
+
+
 def product_payload(d):
     name = text(d.get("name"), 200)
     if not name:
@@ -500,11 +535,20 @@ def product_payload(d):
         raise ApiError("Price and stock must be numbers")
     if price < 0 or stock < 0:
         raise ApiError("Price and stock cannot be negative")
+    if d.get("cost_price") in (None, ""):
+        raise ApiError("Enter the cost price (the price you pay to buy or make this product)")
+    try:
+        cost = q2(d.get("cost_price"))
+    except Exception:
+        raise ApiError("Cost price must be a number")
+    if cost < 0:
+        raise ApiError("Cost price cannot be negative")
     return (name, text(d.get("description"), 3000), price, safe_url(d.get("image_url")),
-            text(d.get("category"), 80), stock)
+            text(d.get("category"), 80), stock, cost)
 
 
-PRODUCT_COLS = "id, name, description, price, image_url, category, stock, created_at, seller_id"
+# cost_price is private to the seller. Never add it to the public product queries.
+PRODUCT_COLS = "id, name, description, price, image_url, category, stock, created_at, seller_id, cost_price"
 
 
 @bp.route("/api/seller/products", methods=["GET"])
@@ -514,14 +558,18 @@ def seller_products():
     with db() as (conn, cur):
         u, s = seller_required(cur)
         cur.execute(f"""
-            SELECT p.id, p.name, p.description, p.price, p.image_url, p.category, p.stock, p.created_at,
+            SELECT p.id, p.name, p.description, p.price, p.image_url, p.category, p.stock, p.created_at, p.cost_price,
                    COALESCE(r.avg,0) AS rating_avg, COALESCE(r.cnt,0) AS rating_count
             FROM products p
             LEFT JOIN (SELECT product_id, AVG(rating)::numeric(3,2) AS avg, COUNT(*) AS cnt
                        FROM reviews GROUP BY product_id) r ON r.product_id = p.id
             WHERE p.seller_id=%s ORDER BY p.id DESC
         """, (s["id"],))
-        return ok(products=cur.fetchall())
+        rate = commission_rate(cur)
+        rows = cur.fetchall()
+        for r in rows:
+            r["profit_per_unit"] = unit_profit(r["price"], r["cost_price"], rate)
+        return ok(products=rows)
 
 
 @bp.route("/api/seller/products", methods=["POST"])
@@ -532,8 +580,8 @@ def seller_create_product():
     with db() as (conn, cur):
         u, s = seller_required(cur)
         cur.execute(f"""
-            INSERT INTO products (name, description, price, image_url, category, stock, seller_id)
-            VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING {PRODUCT_COLS}
+            INSERT INTO products (name, description, price, image_url, category, stock, cost_price, seller_id)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING {PRODUCT_COLS}
         """, payload + (s["id"],))
         return ok(message="Product added", product=cur.fetchone()), 201
 
@@ -546,7 +594,7 @@ def seller_update_product(pid):
     with db() as (conn, cur):
         u, s = seller_required(cur)
         cur.execute(f"""
-            UPDATE products SET name=%s, description=%s, price=%s, image_url=%s, category=%s, stock=%s
+            UPDATE products SET name=%s, description=%s, price=%s, image_url=%s, category=%s, stock=%s, cost_price=%s
             WHERE id=%s AND seller_id=%s RETURNING {PRODUCT_COLS}
         """, payload + (pid, s["id"]))
         row = cur.fetchone()
@@ -578,12 +626,19 @@ def seller_orders():
         u, s = seller_required(cur)
         cur.execute("""
             SELECT oi.id, oi.order_id, oi.product_id, oi.product_name, oi.quantity, oi.price, oi.subtotal,
-                   oi.commission_amount, oi.seller_earning, oi.credited_at,
+                   oi.commission_amount, oi.seller_earning, oi.credited_at, oi.cost_price,
+                   oi.discount_amount, oi.discount_by,
                    o.status, o.customer_name, o.phone, o.address, o.city, o.payment_method, o.created_at
             FROM order_items oi JOIN orders o ON o.id = oi.order_id
             WHERE oi.seller_id=%s ORDER BY oi.id DESC LIMIT 300
         """, (s["id"],))
-        return ok(orders=cur.fetchall())
+        rate = commission_rate(cur)
+        rows = cur.fetchall()
+        for r in rows:
+            r["profit"], r["profit_is_estimate"] = item_profit(r, rate)
+            r["cost_total"] = None if r["cost_price"] is None else Decimal(str(r["cost_price"])) * int(r["quantity"])
+            r.pop("discount_by", None)
+        return ok(orders=rows)
 
 
 @bp.route("/api/seller/wallet", methods=["GET"])
