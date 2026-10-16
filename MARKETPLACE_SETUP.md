@@ -46,3 +46,10 @@
 - Order status (shipped/delivered) ekhon admin-i change kore; seller shudhu order dekhte pare.
 - Image upload ager moto Supabase `product-images` bucket-e hoy.
 - Review dite hole delivered order lage. Eta Admin > Marketplace theke off kora jay.
+
+## Notun: Seller apply + Admin ID/Password dewa (update)
+1. Seller `/seller/` e giye **Apply as seller** chape (customer account lagbe na): nam, store, email, phone, thikana.
+2. Admin panel > **Seller Applications** > **Approve**. Password khali rakhle auto toiri hobe.
+3. Approve korle ekta box-e **Login ID + Password** dekhabe. **Copy** kore seller ke WhatsApp/SMS-e pathan (password ekbar-i dekhay).
+4. Seller `/seller/` e **Seller login** diye dhukbe. Prothom login-e nijer notun password dite hobe.
+5. Kono SQL chalate hobe na. Server start holei `seller_applications` table auto toiri hoy.
