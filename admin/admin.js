@@ -414,7 +414,7 @@ Object.assign(I, {
   wallet: '<rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 10h18M16 15h2"/>',
   star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>'
 });
-const MP = { sellerFilter: "pending", wdFilter: "pending" };
+const MP = { sellerFilter: "pending", wdFilter: "pending", appFilter: "pending" };
 const mpPill = (s) => ({ approved: "good", pending: "warn", rejected: "bad", suspended: "bad" }[s] || "info");
 
 function mpAsk(title, label, okText, cb) {
@@ -459,6 +459,60 @@ async function mpSellerAction(id, act) {
   if (act === "verify" || act === "unverify") return put(`/api/admin/sellers/${id}/verify`, { verified: act === "verify" }, "Updated");
   if (act === "reject") return mpAsk("Reject application", "Reason (shown to the seller)", "Reject", (note) => put(`/api/admin/sellers/${id}/status`, { status: "rejected", note }, "Rejected"));
   if (act === "suspend") return mpAsk("Suspend seller", "Reason (shown to the seller). Their products are hidden from the store.", "Suspend", (note) => put(`/api/admin/sellers/${id}/status`, { status: "suspended", note }, "Suspended"));
+}
+
+/* ---------- Seller applications: admin approves, system creates the seller login ---------- */
+function vApplications() {
+  const opts = [["pending", "Pending"], ["approved", "Approved"], ["rejected", "Rejected"], ["", "All"]]
+    .map(([v, l]) => `<option value="${v}"${v === MP.appFilter ? " selected" : ""}>${l}</option>`).join("");
+  return head("Seller Applications", "Approve to create the seller's login ID and password", `<label class="field"><select id="mpAppFilter" aria-label="Filter applications">${opts}</select></label>`) + `
+  <section class="card table-card"><div class="tscroll"><table><thead><tr><th>Store</th><th>Applicant</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody id="mpBody"><tr><td colspan="4"><div class="empty">Loading...</div></td></tr></tbody></table></div></section>`;
+}
+async function mpLoadApps() {
+  const body = $("#mpBody"); if (!body) return;
+  try {
+    const d = await api("/api/admin/seller-applications" + (MP.appFilter ? `?status=${MP.appFilter}` : ""));
+    if (!$("#mpBody")) return;
+    body.innerHTML = d.applications.length ? d.applications.map((a) => {
+      const acts = a.status === "pending"
+        ? `<button class="btn btn-sm btn-primary" data-aact="approve" data-aid="${a.id}" data-astore="${esc(a.store_name)}">Approve</button> <button class="btn btn-sm btn-ghost" data-aact="reject" data-aid="${a.id}">Reject</button>`
+        : "";
+      return `<tr><td><b>${esc(a.store_name)}</b><br><small>${esc(a.city || "")}${a.address ? " · " + esc(a.address) : ""}</small>
+        ${a.description ? `<br><small>${esc(a.description).slice(0, 140)}</small>` : ""}${a.id_number ? `<br><small>NID/Licence: ${esc(a.id_number)}</small>` : ""}
+        ${a.admin_note ? `<br><small>Note: ${esc(a.admin_note)}</small>` : ""}</td>
+        <td>${esc(a.owner_name)}<br><small>${esc(a.email)}<br>${esc(a.phone)}</small></td>
+        <td><span class="pill ${mpPill(a.status)}">${esc(a.status)}</span><br><small>${dshort(a.created_at)}</small></td>
+        <td style="white-space:nowrap">${acts}</td></tr>`;
+    }).join("") : `<tr><td colspan="4"><div class="empty">No applications found.</div></td></tr>`;
+  } catch (e) { body.innerHTML = `<tr><td colspan="4"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+function mpCredentials(r) {
+  const msg = `Zento Seller Center\nLogin ID: ${r.login_id}\nPassword: ${r.password}\nLogin at: ${location.origin}/seller/\nPlease change your password after the first login.`;
+  showModal(`<div class="modal-h"><h2>Seller approved</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div>
+  <div class="modal-b"><p>Send these details to <b>${esc(r.store_name)}</b> (${esc(r.phone)}). The password is shown only now, so copy it before closing.</p>
+  <textarea id="mpCred" readonly rows="5" style="width:100%">${esc(msg)}</textarea></div>
+  <div class="modal-f"><button class="btn btn-ghost" data-close>Close</button><button class="btn btn-primary" id="mpCopy">Copy</button></div>`);
+  $("#mpCopy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(msg); toast("Copied"); } catch { $("#mpCred").select(); document.execCommand("copy"); toast("Copied"); }
+  });
+}
+function mpAppAction(id, act, store) {
+  if (act === "reject") return mpAsk("Reject application", "Reason (optional)", "Reject", async (note) => {
+    try { const r = await api(`/api/admin/seller-applications/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }); toast(r.message); mpLoadApps(); } catch (e) { toast(e.message, "error"); }
+  });
+  if (act === "approve") {
+    showModal(`<div class="modal-h"><h2>Approve ${esc(store)}</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div>
+    <div class="modal-b"><div class="form"><label class="full">Password for the seller (leave empty to auto-generate)<input id="mpPw" type="text" minlength="8" maxlength="60" autocomplete="off"></label></div></div>
+    <div class="modal-f"><button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" id="mpAppOk">Approve and create login</button></div>`);
+    $("#mpAppOk").addEventListener("click", async () => {
+      const pw = $("#mpPw").value.trim(); closeModal();
+      try {
+        const r = await api(`/api/admin/seller-applications/${id}/approve`, { method: "POST", body: JSON.stringify(pw ? { password: pw } : {}) });
+        mpCredentials(r); mpLoadApps();
+      } catch (e) { toast(e.message, "error"); }
+    });
+  }
 }
 
 function vWithdrawals() {
@@ -525,13 +579,15 @@ async function mpLoadMarket() {
 }
 
 function mpWire(k) {
-  if (!["sellers", "withdrawals", "marketplace"].includes(k)) return;
+  if (!["sellers", "withdrawals", "marketplace", "applications"].includes(k)) return;
+  if (k === "applications") { mpLoadApps(); const f = $("#mpAppFilter"); if (f) f.addEventListener("change", (e) => { MP.appFilter = e.target.value; mpLoadApps(); }); }
   if (k === "sellers") { mpLoadSellers(); const f = $("#mpSellerFilter"); if (f) f.addEventListener("change", (e) => { MP.sellerFilter = e.target.value; mpLoadSellers(); }); }
   if (k === "withdrawals") { mpLoadWithdrawals(); const f = $("#mpWdFilter"); if (f) f.addEventListener("change", (e) => { MP.wdFilter = e.target.value; mpLoadWithdrawals(); }); }
   if (k === "marketplace") mpLoadMarket();
 }
 /* one delegated listener for all marketplace buttons (registered once) */
 document.addEventListener("click", (e) => {
+  const ap = e.target.closest("[data-aact]"); if (ap) return mpAppAction(ap.dataset.aid, ap.dataset.aact, ap.dataset.astore);
   const s = e.target.closest("[data-sact]"); if (s) return mpSellerAction(s.dataset.sid, s.dataset.sact);
   const w = e.target.closest("[data-wact]"); if (w) return mpWithdrawalAction(w.dataset.wid, w.dataset.wact, w.dataset.amt);
   const r = e.target.closest("[data-rdel]");
@@ -549,11 +605,12 @@ const ROUTES = {
   revenue: { t: "Revenue by Category", i: "revenue", v: vRevenue },
   messages: { t: "Messages", i: "chat", v: vMessages },
   settings: { t: "Settings", i: "settings", v: vSettings },
+  applications: { t: "Seller Applications", i: "sellers", v: vApplications },
   sellers: { t: "Sellers", i: "sellers", v: vSellers },
   withdrawals: { t: "Withdrawals", i: "wallet", v: vWithdrawals },
   marketplace: { t: "Marketplace", i: "star", v: vMarket }
 };
-const MAIN = ["dashboard", "products", "orders", "messages", "customers", "sellers", "withdrawals", "marketplace", "analytics"];
+const MAIN = ["dashboard", "products", "orders", "messages", "customers", "applications", "sellers", "withdrawals", "marketplace", "analytics"];
 const REPORTS = ["lowstock", "recent", "revenue"];
 const curRoute = () => { const k = (location.hash || "#dashboard").slice(1); return ROUTES[k] ? k : "dashboard"; };
 
