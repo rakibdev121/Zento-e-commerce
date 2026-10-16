@@ -661,3 +661,15 @@ html.in-app{--safe-top:0px;--safe-bottom:0px}
 .nav-item{position:relative}
 .nav-dot{position:absolute;top:2px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center;font-style:normal;line-height:1}
 @media (min-width:901px){.nav-dot{left:auto;right:6px;top:8px}}
+
+
+/* COUPON (checkout) */
+.coupon-box{margin-top:14px;padding-top:14px;border-top:1px dashed var(--line)}
+.coupon-row{display:flex;gap:8px}
+.coupon-row input{flex:1;min-width:0;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font:inherit;text-transform:uppercase;letter-spacing:.04em}
+.coupon-row button{padding:0 16px;border:0;border-radius:10px;background:var(--ink);color:var(--bg,#fff);font-weight:700;cursor:pointer}
+.coupon-row button:disabled{opacity:.6}
+.coupon-msg{display:block;margin-top:8px;min-height:16px;color:var(--muted)}
+.coupon-msg.ok{color:#16a34a}
+.coupon-msg.bad{color:#dc2626}
+.discount-green{color:#16a34a!important}
