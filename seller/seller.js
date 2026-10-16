@@ -75,7 +75,7 @@ function authShell(mode) {
     </div>
     <div id="authBody"></div>
   </section>`;
-  app.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => (b.dataset.m === "apply" ? showApply() : showLogin())));
+  app.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => authShell(b.dataset.m)));
   return $("#authBody");
 }
 
@@ -222,7 +222,7 @@ function statusScreen(seller) {
 }
 
 /* ---------- dashboard ---------- */
-const TABS = [["overview", "Overview"], ["products", "Products"], ["orders", "Orders"], ["wallet", "Wallet"], ["profile", "Store"]];
+const TABS = [["overview", "Overview"], ["products", "Products"], ["orders", "Orders"], ["coupons", "Coupons"], ["wallet", "Wallet"], ["profile", "Store"]];
 
 function buildTabs() {
   const t = $("#tabs"); t.hidden = false;
@@ -237,6 +237,7 @@ async function go(tab) {
     if (tab === "overview") { await loadMe(); viewOverview(); }
     if (tab === "products") { S.products = (await call("/api/seller/products")).products; viewProducts(); }
     if (tab === "orders") { S.orders = (await call("/api/seller/orders")).orders; viewOrders(); }
+    if (tab === "coupons") { S.coupons = (await call("/api/seller/coupons")).coupons; viewCoupons(); }
     if (tab === "wallet") { S.wallet = await call("/api/seller/wallet"); await loadMe(); viewWallet(); }
     if (tab === "profile") { await loadMe(); viewProfile(); }
   } catch (err) { app.innerHTML = `<div class="card center"><p class="err">${esc(err.message)}</p><button class="btn ghost" id="retry">Try again</button></div>`; $("#retry").addEventListener("click", () => go(tab)); }
@@ -260,7 +261,8 @@ function viewOverview() {
     <div class="stat"><small>Store rating</small><b><span class="stars">${stars(m.rating_avg)}</span> ${Number(m.rating_avg).toFixed(1)}</b><small>${m.rating_count} reviews</small></div>
   </div>
   <div class="card" style="margin-top:14px"><h2>How you get paid</h2>
-    <p class="muted" style="margin:0">When an order with your product is marked <b>delivered</b>, Zento keeps ${w.commission_percent}% and the rest is added to your balance. Then request a withdrawal from the Wallet tab.</p></div>`;
+    <p class="muted" style="margin:0">When an order with your product is marked <b>delivered</b>, Zento keeps ${w.commission_percent}% and the rest is added to your balance. Then request a withdrawal from the Wallet tab.</p>
+    <p class="muted small" style="margin:8px 0 0"><b>Coupons:</b> if you give a discount with your own coupon, you pay that discount. If Zento gives a discount coupon, Zento pays it and you still get your full price.</p></div>`;
 }
 
 /* products */
@@ -341,6 +343,80 @@ function viewOrders() {
     <td>${esc(o.customer_name)}<br><span class="muted small">${esc(o.phone)}<br>${esc(o.address)}${o.city ? ", " + esc(o.city) : ""}</span></td></tr>`).join("")
     : `<tr><td colspan="7" class="center muted">No orders yet.</td></tr>`}
   </tbody></table></div></div>`;
+}
+
+/* coupons */
+const cpDate = (v) => { if (!v) return ""; const d = new Date(v); return isNaN(d) ? "" : d.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" }); };
+const cpValue = (c) => c.discount_type === "percent" ? `${Number(c.value)}%${c.max_discount != null ? ` (max ${money(c.max_discount)})` : ""}` : money(c.value);
+function cpState(c) {
+  const now = Date.now();
+  if (!c.active) return ["Off", "bad"];
+  if (c.expires_at && new Date(c.expires_at) < now) return ["Expired", "bad"];
+  if (c.starts_at && new Date(c.starts_at) > now) return ["Scheduled", "warn"];
+  if (c.usage_limit != null && c.used_count >= c.usage_limit) return ["Fully used", "warn"];
+  return ["Live", "good"];
+}
+function viewCoupons() {
+  app.innerHTML = `<div class="toolbar"><h1>My coupons</h1><button class="btn" id="addC">+ New coupon</button></div>
+  <div class="card"><p class="muted small" style="margin:0">Your coupons work only on your products. The discount is paid from your sale price. Zento commission is then taken on the price the customer paid.</p></div>
+  <div class="card"><div class="tscroll"><table><thead><tr><th>Code</th><th>Discount</th><th>Used</th><th>Discount given</th><th>Status</th><th></th></tr></thead><tbody>
+  ${S.coupons.length ? S.coupons.map((c) => { const [st, cls] = cpState(c); return `<tr>
+    <td><b>${esc(c.code)}</b>${Number(c.min_order) > 0 ? `<br><span class="muted small">Min order ${money(c.min_order)}</span>` : ""}<br><span class="muted small">${c.expires_at ? "Until " + cpDate(c.expires_at) : "No expiry"}</span></td>
+    <td>${esc(cpValue(c))}</td>
+    <td>${c.used_count}${c.usage_limit != null ? " / " + c.usage_limit : ""}<br><span class="muted small">${c.per_user_limit} per customer</span></td>
+    <td>${money(c.discount_given)}</td>
+    <td><span class="pill ${cls}">${st}</span></td>
+    <td style="white-space:nowrap"><button class="btn ghost sm" data-cedit="${c.id}">Edit</button> <button class="btn ghost sm" data-ctog="${c.id}">${c.active ? "Turn off" : "Turn on"}</button> <button class="btn danger sm" data-cdel="${c.id}">Delete</button></td></tr>`; }).join("")
+    : `<tr><td colspan="6" class="center muted">No coupons yet. Create one to attract customers.</td></tr>`}
+  </tbody></table></div></div>`;
+  $("#addC").addEventListener("click", () => couponModal());
+  app.querySelectorAll("[data-cedit]").forEach((b) => b.addEventListener("click", () => couponModal(S.coupons.find((c) => c.id == b.dataset.cedit))));
+  app.querySelectorAll("[data-ctog]").forEach((b) => b.addEventListener("click", async () => {
+    const c = S.coupons.find((x) => x.id == b.dataset.ctog);
+    try { await call(`/api/seller/coupons/${c.id}`, { method: "PUT", body: JSON.stringify({ active: !c.active }) }); go("coupons"); } catch (e) { toast(e.message, "error"); }
+  }));
+  app.querySelectorAll("[data-cdel]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm("Delete this coupon?")) return;
+    try { const r = await call(`/api/seller/coupons/${b.dataset.cdel}`, { method: "DELETE" }); toast(r.message); go("coupons"); } catch (e) { toast(e.message, "error"); }
+  }));
+}
+
+function couponModal(c) {
+  const v = c || { discount_type: "percent", per_user_limit: 1, active: true };
+  const bg = openModal(`<h2>${c ? "Edit coupon" : "New coupon"}</h2>
+  <form id="cf">
+    <label>Coupon code<input id="cCode" maxlength="40" value="${esc(v.code || "")}" placeholder="SAVE10" style="text-transform:uppercase" required></label>
+    <div class="row2">
+      <label>Type<select id="cType"><option value="percent"${v.discount_type === "percent" ? " selected" : ""}>Percent (%)</option><option value="fixed"${v.discount_type === "fixed" ? " selected" : ""}>Fixed amount (BDT)</option></select></label>
+      <label>Value<input id="cValue" type="number" min="0" step="0.01" value="${v.value ?? ""}" required></label>
+    </div>
+    <div class="row2">
+      <label>Max discount (BDT, percent only)<input id="cMax" type="number" min="0" step="0.01" value="${v.max_discount ?? ""}" placeholder="optional"></label>
+      <label>Minimum order (BDT)<input id="cMin" type="number" min="0" step="0.01" value="${Number(v.min_order) || ""}" placeholder="0"></label>
+    </div>
+    <div class="row2">
+      <label>Total uses allowed<input id="cLimit" type="number" min="0" step="1" value="${v.usage_limit ?? ""}" placeholder="unlimited"></label>
+      <label>Uses per customer<input id="cPer" type="number" min="1" step="1" value="${v.per_user_limit ?? 1}"></label>
+    </div>
+    <div class="row2">
+      <label>Starts on<input id="cStart" type="date" value="${cpDate(v.starts_at)}"></label>
+      <label>Ends on<input id="cEnd" type="date" value="${cpDate(v.expires_at)}"></label>
+    </div>
+    <div class="err" id="cErr"></div>
+    <div style="display:flex;gap:10px;margin-top:12px"><button type="button" class="btn ghost" id="cCancel">Cancel</button><button class="btn" style="flex:1" type="submit">${c ? "Save" : "Create coupon"}</button></div>
+  </form>`);
+  $("#cCancel", bg).addEventListener("click", () => bg.remove());
+  $("#cf", bg).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("#cf button[type=submit]", bg); busy(btn, true, c ? "Save" : "Create coupon");
+    const body = JSON.stringify({ code: $("#cCode", bg).value, discount_type: $("#cType", bg).value, value: $("#cValue", bg).value,
+      max_discount: $("#cMax", bg).value, min_order: $("#cMin", bg).value, usage_limit: $("#cLimit", bg).value,
+      per_user_limit: $("#cPer", bg).value, starts_at: $("#cStart", bg).value, expires_at: $("#cEnd", bg).value, active: c ? c.active : true });
+    try {
+      const r = await call(c ? `/api/seller/coupons/${c.id}` : "/api/seller/coupons", { method: c ? "PUT" : "POST", body });
+      bg.remove(); toast(r.message); go("coupons");
+    } catch (err) { $("#cErr", bg).textContent = err.message; busy(btn, false, c ? "Save" : "Create coupon"); }
+  });
 }
 
 /* wallet */
