@@ -75,7 +75,7 @@ function authShell(mode) {
     </div>
     <div id="authBody"></div>
   </section>`;
-  app.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => authShell(b.dataset.m)));
+  app.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => (b.dataset.m === "apply" ? showApply() : showLogin())));
   return $("#authBody");
 }
 
