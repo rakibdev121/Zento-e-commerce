@@ -64,3 +64,11 @@ Seller port tar full tk-i pay (commission ager moto 1000 tk-er upor). Udahoron: 
 
 Coupon-e thake: percent/fixed, max discount, minimum order, kotobar use hobe, prottek customer kotobar, start/end date, on/off.
 Delivery fee ager moto original subtotal dhore hoy (discount-er age). Kono SQL lagbe na, server start holei `coupons` table auto toiri hoy.
+
+## Notun: Cost price + profit hisab (update)
+- Seller product add/edit-e **Cost price** (je dam-e kine ba banay) dewa **must**. Form-e live dekhay: selling price - Zento commission - cost = profit per unit.
+- Cost price shudhu seller dekhe. Customer-er store/API-te kothao jay na.
+- Order hole cost ager moto "snapshot" hoye order_items-e jay, tai pore cost bodlale purono order-er profit bodlay na.
+- Seller dashboard: Overview-e **Total profit**, Products-e Cost ar Profit/unit, Orders-e prottek order-er Profit (delivered hole real, nahole "estimate").
+- Seller coupon dile profit-e discount-o ghata hoy; Zento coupon dile seller-er profit kome na.
+- Ager product-gulor cost nai: seller-ke "Add cost" dekhabe, edit kore cost dilei profit calculate hobe.
