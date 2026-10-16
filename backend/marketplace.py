@@ -17,6 +17,7 @@ Existing tables are only extended with new nullable columns.
 
 import os
 import re
+import secrets
 import logging
 import datetime
 from contextlib import contextmanager
@@ -26,6 +27,7 @@ from functools import wraps
 import psycopg2
 import psycopg2.extras
 from flask import Blueprint, request, send_from_directory, abort
+from werkzeug.security import generate_password_hash, check_password_hash
 
 log = logging.getLogger("zento.marketplace")
 bp = Blueprint("marketplace", __name__)
@@ -260,6 +262,25 @@ CREATE TABLE IF NOT EXISTS marketplace_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+ALTER TABLE sellers ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS seller_applications (
+    id BIGSERIAL PRIMARY KEY,
+    owner_name TEXT NOT NULL,
+    store_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    city TEXT DEFAULT '',
+    address TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    id_number TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    admin_note TEXT DEFAULT '',
+    seller_id BIGINT REFERENCES sellers(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    reviewed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS seller_apps_status_idx ON seller_applications (status, id);
 """
 
 
@@ -384,7 +405,7 @@ def seller_me():
             return ok(seller=None)
         out = dict(s)
         out.pop("user_id", None)
-        data = {"seller": out}
+        data = {"seller": out, "login_id": u.get("email", "")}
         if s["status"] == "approved":
             data["wallet"] = wallet_summary(cur, s["id"])
             cur.execute("SELECT COUNT(*) AS n FROM products WHERE seller_id=%s", (s["id"],))
@@ -896,6 +917,139 @@ def admin_delete_review(rid):
         if not cur.fetchone():
             raise ApiError("Review not found", 404)
     return ok(message="Review removed")
+
+
+# ---------------------------------------------------------------------
+# PUBLIC SELLER APPLICATION (no customer account needed) + admin approval
+# ---------------------------------------------------------------------
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def make_password():
+    alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(10))
+
+
+@bp.route("/api/seller/apply-public", methods=["POST"])
+@api
+def seller_apply_public():
+    d = request.get_json(silent=True) or {}
+    owner = text(d.get("owner_name"), 80)
+    store_name = text(d.get("store_name"), 60)
+    email = text(d.get("email"), 120).lower()
+    phone = text(d.get("phone"), 30)
+    if len(owner) < 2:
+        raise ApiError("Enter your full name")
+    if len(store_name) < 3:
+        raise ApiError("Store name must be at least 3 characters")
+    if not EMAIL_RE.match(email):
+        raise ApiError("Enter a valid email address")
+    if len("".join(c for c in phone if c.isdigit())) < 10:
+        raise ApiError("Enter a valid phone number")
+    with db() as (conn, cur):
+        cur.execute("SELECT 1 FROM users WHERE email=%s", (email,))
+        if cur.fetchone():
+            raise ApiError("This email already has an account. Use a different email for your seller account.", 409)
+        cur.execute("SELECT 1 FROM seller_applications WHERE email=%s AND status='pending'", (email,))
+        if cur.fetchone():
+            raise ApiError("An application with this email is already waiting for review.", 409)
+        cur.execute("""
+            INSERT INTO seller_applications
+                (owner_name, store_name, email, phone, city, address, description, id_number)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+        """, (owner, store_name, email, phone, text(d.get("city"), 80), text(d.get("address"), 300),
+              text(d.get("description"), 800), text(d.get("id_number"), 40)))
+        app_id = cur.fetchone()["id"]
+    return ok(message="Application submitted. Our team will review it and send you your login ID and password.",
+              application_id=app_id)
+
+
+@bp.route("/api/seller/change-password", methods=["POST"])
+@api
+def seller_change_password():
+    d = request.get_json(silent=True) or {}
+    u = current_user()
+    old, new = d.get("current_password") or "", d.get("new_password") or ""
+    if len(new) < 8:
+        raise ApiError("New password must be at least 8 characters")
+    if new == old:
+        raise ApiError("New password must be different from the temporary one")
+    with db() as (conn, cur):
+        cur.execute("SELECT password_hash FROM users WHERE id=%s", (u["user_id"],))
+        row = cur.fetchone()
+        if not row or not check_password_hash(row["password_hash"], old):
+            raise ApiError("Current password is wrong", 403)
+        cur.execute("UPDATE users SET password_hash=%s WHERE id=%s", (generate_password_hash(new), u["user_id"]))
+        cur.execute("UPDATE sellers SET must_change_password=FALSE, updated_at=NOW() WHERE user_id=%s", (u["user_id"],))
+    return ok(message="Password changed")
+
+
+@bp.route("/api/admin/seller-applications", methods=["GET"])
+@api
+def admin_seller_applications():
+    admin_required()
+    status = request.args.get("status", "").strip().lower()
+    with db() as (conn, cur):
+        where, params = "", []
+        if status in ("pending", "approved", "rejected"):
+            where, params = "WHERE status=%s", [status]
+        cur.execute(f"""
+            SELECT id, owner_name, store_name, email, phone, city, address, description, id_number,
+                   status, admin_note, seller_id, created_at, reviewed_at
+            FROM seller_applications {where}
+            ORDER BY (status='pending') DESC, id DESC LIMIT 300
+        """, params)
+        return ok(applications=cur.fetchall())
+
+
+@bp.route("/api/admin/seller-applications/<int:aid>/approve", methods=["POST"])
+@api
+def admin_seller_application_approve(aid):
+    admin_required()
+    d = request.get_json(silent=True) or {}
+    password = text(d.get("password"), 60) or make_password()
+    if len(password) < 8:
+        raise ApiError("Password must be at least 8 characters")
+    with db() as (conn, cur):
+        cur.execute("SELECT * FROM seller_applications WHERE id=%s FOR UPDATE", (aid,))
+        a = cur.fetchone()
+        if not a:
+            raise ApiError("Application not found", 404)
+        if a["status"] == "approved":
+            raise ApiError("This application is already approved", 409)
+        cur.execute("SELECT 1 FROM users WHERE email=%s", (a["email"],))
+        if cur.fetchone():
+            raise ApiError("This email already has an account. Reject it and ask the applicant to use another email.", 409)
+        cur.execute("""
+            INSERT INTO users (name, email, password_hash, email_verified)
+            VALUES (%s,%s,%s,TRUE) RETURNING id
+        """, (a["owner_name"], a["email"], generate_password_hash(password)))
+        user_id = cur.fetchone()["id"]
+        slug = unique_slug(cur, a["store_name"])
+        cur.execute("""
+            INSERT INTO sellers (user_id, store_name, description, phone, address, city, slug,
+                                 status, approved_at, must_change_password)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,'approved',NOW(),TRUE) RETURNING id
+        """, (user_id, a["store_name"], a["description"], a["phone"], a["address"], a["city"], slug))
+        seller_id = cur.fetchone()["id"]
+        cur.execute("""UPDATE seller_applications
+                       SET status='approved', seller_id=%s, reviewed_at=NOW(), admin_note='' WHERE id=%s""",
+                    (seller_id, aid))
+    return ok(message="Approved. Send these login details to the seller.",
+              login_id=a["email"], password=password, store_name=a["store_name"], phone=a["phone"])
+
+
+@bp.route("/api/admin/seller-applications/<int:aid>/reject", methods=["POST"])
+@api
+def admin_seller_application_reject(aid):
+    admin_required()
+    d = request.get_json(silent=True) or {}
+    with db() as (conn, cur):
+        cur.execute("""UPDATE seller_applications SET status='rejected', admin_note=%s, reviewed_at=NOW()
+                       WHERE id=%s AND status='pending' RETURNING id""", (text(d.get("note"), 300), aid))
+        if not cur.fetchone():
+            raise ApiError("Pending application not found", 404)
+    return ok(message="Application rejected")
 
 
 # ---------------------------------------------------------------------
