@@ -1377,7 +1377,34 @@ def create_order():
             }, 400
 
         delivery_fee = 0 if subtotal >= 100 else 5
-        total = subtotal + delivery_fee
+
+        # ZENTO_MARKETPLACE: coupon (seller coupon = seller pays, admin coupon = Zento pays)
+        coupon_code = str(data.get("coupon_code") or "").strip()
+        coupon_info = None
+        discount_total = 0
+
+        if coupon_code:
+            try:
+                coupon_info = _mp.apply_coupon(
+                    cursor, coupon_code, user["user_id"],
+                    [{"id": it["id"], "subtotal": it["subtotal"]} for it in clean_items],
+                    consume=True
+                )
+            except _mp.ApiError as coupon_error:
+                conn.rollback()
+                cursor.close()
+                conn.close()
+                return {
+                    "status": "error",
+                    "message": coupon_error.message
+                }, 400
+
+            discount_total = float(coupon_info["discount_total"])
+
+            for item, share in zip(clean_items, coupon_info["discounts"]):
+                item["discount"] = float(share)
+
+        total = subtotal - discount_total + delivery_fee
 
         if payment_trx_id:
             cursor.execute("""
@@ -1428,6 +1455,13 @@ def create_order():
 
         order_id, created_at = cursor.fetchone()
 
+        if coupon_info:
+            cursor.execute("""
+                UPDATE orders
+                SET coupon_id = %s, coupon_code = %s, discount_total = %s
+                WHERE id = %s
+            """, (coupon_info["coupon"]["id"], coupon_info["coupon"]["code"], discount_total, order_id))
+
         for item in clean_items:
             cursor.execute("""
                 INSERT INTO order_items (
@@ -1455,6 +1489,17 @@ def create_order():
                 WHERE order_id = %s AND product_id = %s
             """, (item["id"], order_id, item["id"]))
 
+            # ZENTO_MARKETPLACE: remember the coupon discount on this item
+            if coupon_info and item.get("discount"):
+                cursor.execute("""
+                    UPDATE order_items
+                    SET coupon_id = %s, discount_amount = %s, discount_by = %s
+                    WHERE order_id = %s AND product_id = %s
+                """, (
+                    coupon_info["coupon"]["id"], item["discount"],
+                    coupon_info["coupon"]["funded_by"], order_id, item["id"]
+                ))
+
             cursor.execute("""
                 UPDATE products
                 SET stock = GREATEST(COALESCE(stock, 0) - %s, 0)
@@ -1475,6 +1520,8 @@ def create_order():
                 "id": order_id,
                 "subtotal": subtotal,
                 "delivery_fee": delivery_fee,
+                "discount_total": discount_total,
+                "coupon_code": coupon_info["coupon"]["code"] if coupon_info else "",
                 "total": total,
                 "payment_method": payment_method,
                 "status": "pending",
@@ -1508,6 +1555,7 @@ def get_orders():
 
     try:
         ensure_order_tables()
+        _mp_ready()
 
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cursor = conn.cursor()
@@ -1528,7 +1576,9 @@ def get_orders():
                 updated_at,
                 created_at,
                 COALESCE(payment_trx_id, ''),
-                COALESCE(payment_sender, '')
+                COALESCE(payment_sender, ''),
+                COALESCE(coupon_code, ''),
+                COALESCE(discount_total, 0)
             FROM orders
             WHERE user_id = %s
             ORDER BY id DESC
@@ -1578,6 +1628,8 @@ def get_orders():
                 "created_at": str(row[12]),
                 "payment_trx_id": row[13],
                 "payment_sender": row[14],
+                "coupon_code": row[15],
+                "discount_total": float(row[16]),
                 "items": items
             })
 
@@ -1932,6 +1984,7 @@ def admin_get_orders():
 
     try:
         ensure_order_tables()
+        _mp_ready()
 
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cursor = conn.cursor()
@@ -1953,7 +2006,9 @@ def admin_get_orders():
                 updated_at,
                 created_at,
                 COALESCE(payment_trx_id, ''),
-                COALESCE(payment_sender, '')
+                COALESCE(payment_sender, ''),
+                COALESCE(coupon_code, ''),
+                COALESCE(discount_total, 0)
             FROM orders
             ORDER BY id DESC
         """)
@@ -2004,6 +2059,8 @@ def admin_get_orders():
                 "created_at": str(row[13]),
                 "payment_trx_id": row[14],
                 "payment_sender": row[15],
+                "coupon_code": row[16],
+                "discount_total": float(row[17]),
                 "items": items
             })
 
