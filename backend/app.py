@@ -349,6 +349,48 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask import request
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "change-this-secret-in-render")
+
+if JWT_SECRET == "change-this-secret-in-render":
+    logging.warning(
+        "SECURITY: JWT_SECRET is not set, so the public default is used. "
+        "Anyone can forge login tokens. Set a long random JWT_SECRET in Render."
+    )
+
+# --- login brute-force protection (per email, kept in memory) ---
+LOGIN_MAX_FAILS = 8
+LOGIN_WINDOW_SECONDS = 15 * 60
+_login_fails = {}
+_login_lock = threading.Lock()
+
+
+def login_wait_seconds(key, now=None):
+    """Seconds the account must still wait, or 0 if login is allowed."""
+    import time
+    now = now if now is not None else time.time()
+    with _login_lock:
+        hits = [t for t in _login_fails.get(key, []) if now - t < LOGIN_WINDOW_SECONDS]
+        if hits:
+            _login_fails[key] = hits
+        else:
+            _login_fails.pop(key, None)
+        if len(hits) >= LOGIN_MAX_FAILS:
+            return int(LOGIN_WINDOW_SECONDS - (now - hits[0])) + 1
+    return 0
+
+
+def login_record_failure(key, now=None):
+    import time
+    now = now if now is not None else time.time()
+    with _login_lock:
+        if len(_login_fails) > 5000:   # keep memory small
+            for k in [k for k, v in _login_fails.items() if not v or now - v[-1] > LOGIN_WINDOW_SECONDS]:
+                _login_fails.pop(k, None)
+        _login_fails.setdefault(key, []).append(now)
+
+
+def login_clear_failures(key):
+    with _login_lock:
+        _login_fails.pop(key, None)
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
 
@@ -777,6 +819,15 @@ def login():
                 "message": "Email and password are required"
             }, 400
 
+        login_key = str(email).lower().strip()
+        wait = login_wait_seconds(login_key)
+
+        if wait:
+            return {
+                "status": "error",
+                "message": f"Too many failed attempts. Try again in {max(1, wait // 60)} minute(s)."
+            }, 429
+
         ensure_auth_tables()
 
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
@@ -797,10 +848,13 @@ def login():
         conn.close()
 
         if not user or not check_password_hash(user[3], password):
+            login_record_failure(login_key)
             return {
                 "status": "error",
                 "message": "Invalid email or password"
             }, 401
+
+        login_clear_failures(login_key)
 
         if not user[5]:
             return {
@@ -844,6 +898,20 @@ def login():
 @app.route("/api/create-admin", methods=["POST"])
 def create_admin():
     try:
+        # SECURITY: only a logged-in admin, or someone who knows the server's
+        # ADMIN_API_TOKEN (send it in the X-Admin-Token header), may create admins.
+        sent_token = request.headers.get("X-Admin-Token", "")
+        expected_token = os.environ.get("ADMIN_API_TOKEN", "")
+        has_setup_token = bool(expected_token) and hmac.compare_digest(
+            sent_token.encode("utf-8"), expected_token.encode("utf-8")
+        )
+
+        if not (has_setup_token or admin_user_from_request()):
+            return {
+                "status": "error",
+                "message": "Not allowed"
+            }, 403
+
         data = request.get_json() or {}
 
         name = data.get("name")
