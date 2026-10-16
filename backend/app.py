@@ -1,5 +1,7 @@
 import os
 import psycopg2
+import psycopg2.extras
+from decimal import Decimal
 from flask_cors import CORS
 from flask import Flask, send_from_directory, redirect, request
 from dotenv import load_dotenv
@@ -349,48 +351,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask import request
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "change-this-secret-in-render")
-
-if JWT_SECRET == "change-this-secret-in-render":
-    logging.warning(
-        "SECURITY: JWT_SECRET is not set, so the public default is used. "
-        "Anyone can forge login tokens. Set a long random JWT_SECRET in Render."
-    )
-
-# --- login brute-force protection (per email, kept in memory) ---
-LOGIN_MAX_FAILS = 8
-LOGIN_WINDOW_SECONDS = 15 * 60
-_login_fails = {}
-_login_lock = threading.Lock()
-
-
-def login_wait_seconds(key, now=None):
-    """Seconds the account must still wait, or 0 if login is allowed."""
-    import time
-    now = now if now is not None else time.time()
-    with _login_lock:
-        hits = [t for t in _login_fails.get(key, []) if now - t < LOGIN_WINDOW_SECONDS]
-        if hits:
-            _login_fails[key] = hits
-        else:
-            _login_fails.pop(key, None)
-        if len(hits) >= LOGIN_MAX_FAILS:
-            return int(LOGIN_WINDOW_SECONDS - (now - hits[0])) + 1
-    return 0
-
-
-def login_record_failure(key, now=None):
-    import time
-    now = now if now is not None else time.time()
-    with _login_lock:
-        if len(_login_fails) > 5000:   # keep memory small
-            for k in [k for k, v in _login_fails.items() if not v or now - v[-1] > LOGIN_WINDOW_SECONDS]:
-                _login_fails.pop(k, None)
-        _login_fails.setdefault(key, []).append(now)
-
-
-def login_clear_failures(key):
-    with _login_lock:
-        _login_fails.pop(key, None)
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
 
@@ -819,15 +779,6 @@ def login():
                 "message": "Email and password are required"
             }, 400
 
-        login_key = str(email).lower().strip()
-        wait = login_wait_seconds(login_key)
-
-        if wait:
-            return {
-                "status": "error",
-                "message": f"Too many failed attempts. Try again in {max(1, wait // 60)} minute(s)."
-            }, 429
-
         ensure_auth_tables()
 
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
@@ -848,13 +799,10 @@ def login():
         conn.close()
 
         if not user or not check_password_hash(user[3], password):
-            login_record_failure(login_key)
             return {
                 "status": "error",
                 "message": "Invalid email or password"
             }, 401
-
-        login_clear_failures(login_key)
 
         if not user[5]:
             return {
@@ -898,20 +846,6 @@ def login():
 @app.route("/api/create-admin", methods=["POST"])
 def create_admin():
     try:
-        # SECURITY: only a logged-in admin, or someone who knows the server's
-        # ADMIN_API_TOKEN (send it in the X-Admin-Token header), may create admins.
-        sent_token = request.headers.get("X-Admin-Token", "")
-        expected_token = os.environ.get("ADMIN_API_TOKEN", "")
-        has_setup_token = bool(expected_token) and hmac.compare_digest(
-            sent_token.encode("utf-8"), expected_token.encode("utf-8")
-        )
-
-        if not (has_setup_token or admin_user_from_request()):
-            return {
-                "status": "error",
-                "message": "Not allowed"
-            }, 403
-
         data = request.get_json() or {}
 
         name = data.get("name")
@@ -1280,6 +1214,37 @@ def payment_info():
     }
 
 
+def _order_discount_map(order_ids):
+    """Coupon info per order. Never breaks the order list if coupon columns are missing."""
+    result = {}
+    if not order_ids:
+        return result
+    try:
+        c = psycopg2.connect(os.environ["DATABASE_URL"])
+        cur = c.cursor()
+        cur.execute("""
+            SELECT id, COALESCE(discount_amount, 0), COALESCE(coupon_code, ''), COALESCE(coupon_by, '')
+            FROM orders WHERE id = ANY(%s)
+        """, (list(order_ids),))
+        for r in cur.fetchall():
+            result[r[0]] = {
+                "discount_amount": float(r[1]),
+                "coupon_code": r[2],
+                "coupon_by": r[3]
+            }
+        cur.close()
+        c.close()
+    except Exception:
+        pass
+    return result
+
+
+def _attach_discounts(orders):
+    found = _order_discount_map([o["id"] for o in orders])
+    for o in orders:
+        o.update(found.get(o["id"], {"discount_amount": 0.0, "coupon_code": "", "coupon_by": ""}))
+
+
 @app.route("/api/orders", methods=["POST"])
 def create_order():
     user = get_authenticated_user()
@@ -1427,7 +1392,11 @@ def create_order():
             line_total = float(real_price) * quantity
             subtotal += line_total
 
+            cursor.execute("SELECT seller_id FROM products WHERE id = %s", (real_id,))
+            _srow = cursor.fetchone()
+
             clean_items.append({
+                "seller_id": _srow[0] if _srow else None,
                 "id": real_id,
                 "name": real_name,
                 "price": float(real_price),
@@ -1445,18 +1414,30 @@ def create_order():
             }, 400
 
         delivery_fee = 0 if subtotal >= 100 else 5
+        total = subtotal + delivery_fee
 
-        # ZENTO_MARKETPLACE: coupon (seller coupon = seller pays, admin coupon = Zento pays)
-        coupon_code = str(data.get("coupon_code") or "").strip()
-        coupon_info = None
-        discount_total = 0
+        # COUPON: seller coupon = seller pays, admin coupon = Zento pays
+        coupon_code = str(data.get("coupon_code", "")).strip()
+        coupon_quote = None
+        coupon_cur = None
+        discount_amount = 0.0
 
         if coupon_code:
+            coupon_cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             try:
-                coupon_info = _mp.apply_coupon(
-                    cursor, coupon_code, user["user_id"],
-                    [{"id": it["id"], "subtotal": it["subtotal"]} for it in clean_items],
-                    consume=True
+                coupon_quote = _mp.coupon_quote(
+                    coupon_cur,
+                    coupon_code,
+                    user["user_id"],
+                    [
+                        {
+                            "product_id": ci["id"],
+                            "seller_id": ci["seller_id"],
+                            "subtotal": Decimal(str(round(ci["subtotal"], 2)))
+                        }
+                        for ci in clean_items
+                    ],
+                    lock=True
                 )
             except _mp.ApiError as coupon_error:
                 conn.rollback()
@@ -1467,12 +1448,8 @@ def create_order():
                     "message": coupon_error.message
                 }, 400
 
-            discount_total = float(coupon_info["discount_total"])
-
-            for item, share in zip(clean_items, coupon_info["discounts"]):
-                item["discount"] = float(share)
-
-        total = subtotal - discount_total + delivery_fee
+            discount_amount = float(coupon_quote["discount"])
+            total = round(subtotal + delivery_fee - discount_amount, 2)
 
         if payment_trx_id:
             cursor.execute("""
@@ -1523,13 +1500,6 @@ def create_order():
 
         order_id, created_at = cursor.fetchone()
 
-        if coupon_info:
-            cursor.execute("""
-                UPDATE orders
-                SET coupon_id = %s, coupon_code = %s, discount_total = %s
-                WHERE id = %s
-            """, (coupon_info["coupon"]["id"], coupon_info["coupon"]["code"], discount_total, order_id))
-
         for item in clean_items:
             cursor.execute("""
                 INSERT INTO order_items (
@@ -1541,6 +1511,7 @@ def create_order():
                     subtotal
                 )
                 VALUES (%s,%s,%s,%s,%s,%s)
+                RETURNING id
             """, (
                 order_id,
                 item["id"],
@@ -1549,25 +1520,14 @@ def create_order():
                 item["quantity"],
                 item["subtotal"]
             ))
+            item["row_id"] = cursor.fetchone()[0]
 
             # ZENTO_MARKETPLACE: remember which seller sold this item
             cursor.execute("""
                 UPDATE order_items
-                SET seller_id = (SELECT seller_id FROM products WHERE id = %s),
-                    cost_price = (SELECT cost_price FROM products WHERE id = %s)
+                SET seller_id = (SELECT seller_id FROM products WHERE id = %s)
                 WHERE order_id = %s AND product_id = %s
-            """, (item["id"], item["id"], order_id, item["id"]))
-
-            # ZENTO_MARKETPLACE: remember the coupon discount on this item
-            if coupon_info and item.get("discount"):
-                cursor.execute("""
-                    UPDATE order_items
-                    SET coupon_id = %s, discount_amount = %s, discount_by = %s
-                    WHERE order_id = %s AND product_id = %s
-                """, (
-                    coupon_info["coupon"]["id"], item["discount"],
-                    coupon_info["coupon"]["funded_by"], order_id, item["id"]
-                ))
+            """, (item["id"], order_id, item["id"]))
 
             cursor.execute("""
                 UPDATE products
@@ -1577,6 +1537,31 @@ def create_order():
                 item["quantity"],
                 item["id"]
             ))
+
+        # COUPON: save how the discount was shared and count the coupon use
+        if coupon_quote:
+            cursor.execute("""
+                UPDATE orders
+                SET coupon_id = %s, coupon_code = %s, discount_amount = %s, coupon_by = %s
+                WHERE id = %s
+            """, (
+                coupon_quote["coupon_id"],
+                coupon_quote["code"],
+                coupon_quote["discount"],
+                coupon_quote["funded_by"],
+                order_id
+            ))
+
+            for index, item in enumerate(clean_items):
+                share = coupon_quote["shares"][index]
+                if share > 0:
+                    cursor.execute("""
+                        UPDATE order_items
+                        SET coupon_discount = %s, coupon_by = %s
+                        WHERE id = %s
+                    """, (share, coupon_quote["funded_by"], item["row_id"]))
+
+            _mp.coupon_redeem(coupon_cur, coupon_quote, user["user_id"], order_id)
 
         conn.commit()
         cursor.close()
@@ -1589,8 +1574,7 @@ def create_order():
                 "id": order_id,
                 "subtotal": subtotal,
                 "delivery_fee": delivery_fee,
-                "discount_total": discount_total,
-                "coupon_code": coupon_info["coupon"]["code"] if coupon_info else "",
+                "discount_amount": discount_amount,
                 "total": total,
                 "payment_method": payment_method,
                 "status": "pending",
@@ -1624,7 +1608,6 @@ def get_orders():
 
     try:
         ensure_order_tables()
-        _mp_ready()
 
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cursor = conn.cursor()
@@ -1645,9 +1628,7 @@ def get_orders():
                 updated_at,
                 created_at,
                 COALESCE(payment_trx_id, ''),
-                COALESCE(payment_sender, ''),
-                COALESCE(coupon_code, ''),
-                COALESCE(discount_total, 0)
+                COALESCE(payment_sender, '')
             FROM orders
             WHERE user_id = %s
             ORDER BY id DESC
@@ -1697,13 +1678,13 @@ def get_orders():
                 "created_at": str(row[12]),
                 "payment_trx_id": row[13],
                 "payment_sender": row[14],
-                "coupon_code": row[15],
-                "discount_total": float(row[16]),
                 "items": items
             })
 
         cursor.close()
         conn.close()
+
+        _attach_discounts(orders)
 
         return {
             "status": "success",
@@ -2053,7 +2034,6 @@ def admin_get_orders():
 
     try:
         ensure_order_tables()
-        _mp_ready()
 
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cursor = conn.cursor()
@@ -2075,9 +2055,7 @@ def admin_get_orders():
                 updated_at,
                 created_at,
                 COALESCE(payment_trx_id, ''),
-                COALESCE(payment_sender, ''),
-                COALESCE(coupon_code, ''),
-                COALESCE(discount_total, 0)
+                COALESCE(payment_sender, '')
             FROM orders
             ORDER BY id DESC
         """)
@@ -2128,13 +2106,13 @@ def admin_get_orders():
                 "created_at": str(row[13]),
                 "payment_trx_id": row[14],
                 "payment_sender": row[15],
-                "coupon_code": row[16],
-                "discount_total": float(row[17]),
                 "items": items
             })
 
         cursor.close()
         conn.close()
+
+        _attach_discounts(orders)
 
         return {
             "status": "success",

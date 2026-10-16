@@ -282,33 +282,85 @@ CREATE TABLE IF NOT EXISTS seller_applications (
 );
 CREATE INDEX IF NOT EXISTS seller_apps_status_idx ON seller_applications (status, id);
 
+-- COUPONS (seller coupons are paid by the seller, admin coupons by the platform)
 CREATE TABLE IF NOT EXISTS coupons (
     id BIGSERIAL PRIMARY KEY,
-    code TEXT UNIQUE NOT NULL,
+    code TEXT NOT NULL,
     seller_id BIGINT REFERENCES sellers(id) ON DELETE CASCADE,
     discount_type TEXT NOT NULL DEFAULT 'percent',
-    value NUMERIC(12,2) NOT NULL,
-    max_discount NUMERIC(12,2),
-    min_order NUMERIC(12,2) NOT NULL DEFAULT 0,
+    discount_value NUMERIC(10,2) NOT NULL,
+    max_discount NUMERIC(10,2),
+    min_order NUMERIC(10,2) NOT NULL DEFAULT 0,
     usage_limit INTEGER,
     per_user_limit INTEGER NOT NULL DEFAULT 1,
     used_count INTEGER NOT NULL DEFAULT 0,
     starts_at TIMESTAMPTZ,
     expires_at TIMESTAMPTZ,
-    active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+CREATE UNIQUE INDEX IF NOT EXISTS coupons_code_uidx ON coupons (UPPER(code));
 CREATE INDEX IF NOT EXISTS coupons_seller_idx ON coupons (seller_id);
+
+CREATE TABLE IF NOT EXISTS coupon_redemptions (
+    id BIGSERIAL PRIMARY KEY,
+    coupon_id BIGINT NOT NULL REFERENCES coupons(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    order_id BIGINT NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS coupon_red_idx ON coupon_redemptions (coupon_id, user_id);
 
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_id BIGINT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code TEXT DEFAULT '';
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_total NUMERIC(12,2) NOT NULL DEFAULT 0;
-ALTER TABLE order_items ADD COLUMN IF NOT EXISTS coupon_id BIGINT;
-ALTER TABLE order_items ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0;
-ALTER TABLE order_items ADD COLUMN IF NOT EXISTS discount_by TEXT DEFAULT '';
-ALTER TABLE products ADD COLUMN IF NOT EXISTS cost_price NUMERIC(12,2);
-ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cost_price NUMERIC(12,2);
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_by TEXT DEFAULT '';
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS coupon_discount NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS coupon_by TEXT DEFAULT '';
+
+-- ADMIN WALLET (ledger). bucket 'commission' = Zento's own money,
+-- bucket 'seller_funds' = all sellers' money held together until withdrawals are paid.
+CREATE TABLE IF NOT EXISTS admin_wallet_tx (
+    id BIGSERIAL PRIMARY KEY,
+    bucket TEXT NOT NULL,
+    type TEXT NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    seller_id BIGINT,
+    order_id BIGINT,
+    order_item_id BIGINT,
+    withdrawal_id BIGINT,
+    note TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS admin_wallet_idx ON admin_wallet_tx (bucket, id);
 """
+
+
+def _backfill_admin_wallet(cur):
+    """One time: copy money that was already credited/paid before the admin wallet existed."""
+    cur.execute("SELECT 1 FROM marketplace_settings WHERE key='admin_wallet_backfilled'")
+    if cur.fetchone():
+        return
+    cur.execute("""
+        INSERT INTO admin_wallet_tx (bucket, type, amount, seller_id, order_id, order_item_id, note, created_at)
+        SELECT 'commission', 'commission', commission_amount, seller_id, order_id, id,
+               'Commission (earlier order)', credited_at
+        FROM order_items WHERE credited_at IS NOT NULL AND commission_amount > 0
+    """)
+    cur.execute("""
+        INSERT INTO admin_wallet_tx (bucket, type, amount, seller_id, order_id, order_item_id, note, created_at)
+        SELECT 'seller_funds', 'seller_funds', seller_earning, seller_id, order_id, id,
+               'Seller money (earlier order)', credited_at
+        FROM order_items WHERE credited_at IS NOT NULL AND seller_earning > 0
+    """)
+    cur.execute("""
+        INSERT INTO admin_wallet_tx (bucket, type, amount, seller_id, withdrawal_id, note, created_at)
+        SELECT 'seller_funds', 'withdrawal', -amount, seller_id, id,
+               'Withdrawal paid (earlier)', COALESCE(processed_at, created_at)
+        FROM withdrawals WHERE status='approved'
+    """)
+    cur.execute("INSERT INTO marketplace_settings (key, value) VALUES ('admin_wallet_backfilled','1') ON CONFLICT (key) DO NOTHING")
 
 
 def ensure_tables():
@@ -317,6 +369,7 @@ def ensure_tables():
     try:
         cur = conn.cursor()
         cur.execute(SCHEMA_SQL)
+        _backfill_admin_wallet(cur)
         conn.commit()
         READY = True
     except Exception:
@@ -343,38 +396,48 @@ def mp_credit_order(cur, order_id):
         rate = Decimal(DEFAULT_SETTINGS["commission_percent"])
 
     cur.execute("""
-        SELECT id, seller_id, subtotal, COALESCE(discount_amount,0), COALESCE(discount_by,'')
+        SELECT id, seller_id, subtotal, COALESCE(coupon_discount, 0), COALESCE(coupon_by, '')
         FROM order_items
         WHERE order_id=%s AND seller_id IS NOT NULL AND credited_at IS NULL
         FOR UPDATE
     """, (order_id,))
-    for item_id, seller_id, subtotal, discount, funded_by in cur.fetchall():
+    for item_id, seller_id, subtotal, coupon_disc, coupon_by in cur.fetchall():
         gross = Decimal(subtotal)
-        discount = Decimal(discount or 0)
-        if funded_by == "seller":
-            # Seller's own coupon: the seller carries the discount.
-            # Commission is taken on what the customer actually paid for the item.
-            base = gross - discount
-            note = (f"Order #{order_id}: sale {gross} minus your coupon discount {discount}"
-                    f" = {base}, minus {rate}% commission")
-        else:
-            # Zento's coupon (or no coupon): the seller still gets the full price.
-            # Zento pays the discount from its own share.
-            base = gross
-            note = f"Order #{order_id}: sale {gross} minus {rate}% commission"
-            if discount > 0:
-                note += f" (Zento coupon discount {discount} paid by Zento, not by you)"
-        commission = q2(base * rate / 100)
-        earning = base - commission
+        # Commission is ALWAYS taken on the original (pre-coupon) price.
+        commission = q2(gross * rate / 100)
+        # Seller coupon  -> the seller pays the discount out of their own share.
+        # Admin coupon   -> the platform pays it; the seller still gets the full share.
+        seller_discount = Decimal(coupon_disc) if coupon_by == "seller" else Decimal(0)
+        earning = gross - commission - seller_discount
+        if earning < 0:
+            earning = Decimal(0)
         cur.execute("""
             UPDATE order_items
             SET commission_rate=%s, commission_amount=%s, seller_earning=%s, credited_at=NOW()
             WHERE id=%s
         """, (rate, commission, earning, item_id))
+        note = f"Order #{order_id}: sale {gross} minus {rate}% commission ({commission})"
+        if seller_discount > 0:
+            note += f" minus your coupon discount ({seller_discount})"
+        elif coupon_by == "platform" and Decimal(coupon_disc) > 0:
+            note += f" (Zento coupon of {Decimal(coupon_disc)} was paid by Zento)"
         cur.execute("""
             INSERT INTO seller_transactions (seller_id, type, amount, order_id, order_item_id, note)
             VALUES (%s, 'sale', %s, %s, %s, %s)
-        """, (seller_id, earning, order_id, item_id, f"{note} ({commission})"))
+        """, (seller_id, earning, order_id, item_id, note))
+        # ---- admin wallet: commission is Zento's own money, seller money is held together ----
+        wallet_rows = [("commission", "commission", commission, f"Order #{order_id}: {rate}% commission"),
+                       ("seller_funds", "seller_funds", earning, f"Order #{order_id}: seller money held")]
+        if coupon_by == "platform" and Decimal(coupon_disc) > 0:
+            # Zento coupon: Zento pays it from its own pocket (commission wallet)
+            wallet_rows.append(("commission", "coupon_cost", -Decimal(coupon_disc),
+                                f"Order #{order_id}: Zento coupon paid for the customer"))
+        for bucket, typ, amt, wnote in wallet_rows:
+            if amt != 0:
+                cur.execute("""
+                    INSERT INTO admin_wallet_tx (bucket, type, amount, seller_id, order_id, order_item_id, note)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """, (bucket, typ, amt, seller_id, order_id, item_id, wnote))
 
 
 def wallet_summary(cur, seller_id):
@@ -459,13 +522,6 @@ def seller_me():
                            FROM reviews r JOIN products p ON p.id=r.product_id WHERE p.seller_id=%s""", (s["id"],))
             r = cur.fetchone()
             data["rating_avg"], data["rating_count"] = r["avg"], r["cnt"]
-            cur.execute("""SELECT COALESCE(SUM(seller_earning - cost_price * quantity), 0) AS profit,
-                                  COUNT(*) FILTER (WHERE cost_price IS NULL) AS no_cost
-                           FROM order_items WHERE seller_id=%s AND credited_at IS NOT NULL""", (s["id"],))
-            r = cur.fetchone()
-            data["profit_total"], data["profit_missing_cost_items"] = r["profit"], r["no_cost"]
-            cur.execute("SELECT COUNT(*) AS n FROM products WHERE seller_id=%s AND cost_price IS NULL", (s["id"],))
-            data["products_missing_cost"] = cur.fetchone()["n"]
             cur.execute("SELECT value FROM marketplace_settings WHERE key='min_withdrawal'")
             m = cur.fetchone()
             data["min_withdrawal"] = Decimal(m["value"]) if m else Decimal(DEFAULT_SETTINGS["min_withdrawal"])
@@ -498,32 +554,6 @@ def seller_update_me():
 # ---------------------------------------------------------------------
 # SELLER: products
 # ---------------------------------------------------------------------
-def unit_profit(price, cost, rate):
-    """Seller profit on one unit at full price: price - Zento commission - cost. None if cost unknown."""
-    if cost is None:
-        return None
-    price, cost = Decimal(str(price)), Decimal(str(cost))
-    return price - q2(price * Decimal(str(rate)) / 100) - cost
-
-
-def item_profit(row, rate):
-    """
-    Profit for one order line. Uses the real wallet credit once delivered,
-    otherwise an estimate. Returns (profit or None, is_estimate).
-    """
-    cost = row.get("cost_price")
-    if cost is None:
-        return None, False
-    cost_total = Decimal(str(cost)) * int(row["quantity"])
-    if row.get("credited_at"):
-        return Decimal(str(row["seller_earning"])) - cost_total, False
-    gross = Decimal(str(row["subtotal"]))
-    disc = Decimal(str(row.get("discount_amount") or 0))
-    base = gross - disc if row.get("discount_by") == "seller" else gross
-    earning = base - q2(base * Decimal(str(rate)) / 100)
-    return earning - cost_total, True
-
-
 def product_payload(d):
     name = text(d.get("name"), 200)
     if not name:
@@ -535,20 +565,11 @@ def product_payload(d):
         raise ApiError("Price and stock must be numbers")
     if price < 0 or stock < 0:
         raise ApiError("Price and stock cannot be negative")
-    if d.get("cost_price") in (None, ""):
-        raise ApiError("Enter the cost price (the price you pay to buy or make this product)")
-    try:
-        cost = q2(d.get("cost_price"))
-    except Exception:
-        raise ApiError("Cost price must be a number")
-    if cost < 0:
-        raise ApiError("Cost price cannot be negative")
     return (name, text(d.get("description"), 3000), price, safe_url(d.get("image_url")),
-            text(d.get("category"), 80), stock, cost)
+            text(d.get("category"), 80), stock)
 
 
-# cost_price is private to the seller. Never add it to the public product queries.
-PRODUCT_COLS = "id, name, description, price, image_url, category, stock, created_at, seller_id, cost_price"
+PRODUCT_COLS = "id, name, description, price, image_url, category, stock, created_at, seller_id"
 
 
 @bp.route("/api/seller/products", methods=["GET"])
@@ -558,18 +579,14 @@ def seller_products():
     with db() as (conn, cur):
         u, s = seller_required(cur)
         cur.execute(f"""
-            SELECT p.id, p.name, p.description, p.price, p.image_url, p.category, p.stock, p.created_at, p.cost_price,
+            SELECT p.id, p.name, p.description, p.price, p.image_url, p.category, p.stock, p.created_at,
                    COALESCE(r.avg,0) AS rating_avg, COALESCE(r.cnt,0) AS rating_count
             FROM products p
             LEFT JOIN (SELECT product_id, AVG(rating)::numeric(3,2) AS avg, COUNT(*) AS cnt
                        FROM reviews GROUP BY product_id) r ON r.product_id = p.id
             WHERE p.seller_id=%s ORDER BY p.id DESC
         """, (s["id"],))
-        rate = commission_rate(cur)
-        rows = cur.fetchall()
-        for r in rows:
-            r["profit_per_unit"] = unit_profit(r["price"], r["cost_price"], rate)
-        return ok(products=rows)
+        return ok(products=cur.fetchall())
 
 
 @bp.route("/api/seller/products", methods=["POST"])
@@ -580,8 +597,8 @@ def seller_create_product():
     with db() as (conn, cur):
         u, s = seller_required(cur)
         cur.execute(f"""
-            INSERT INTO products (name, description, price, image_url, category, stock, cost_price, seller_id)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING {PRODUCT_COLS}
+            INSERT INTO products (name, description, price, image_url, category, stock, seller_id)
+            VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING {PRODUCT_COLS}
         """, payload + (s["id"],))
         return ok(message="Product added", product=cur.fetchone()), 201
 
@@ -594,7 +611,7 @@ def seller_update_product(pid):
     with db() as (conn, cur):
         u, s = seller_required(cur)
         cur.execute(f"""
-            UPDATE products SET name=%s, description=%s, price=%s, image_url=%s, category=%s, stock=%s, cost_price=%s
+            UPDATE products SET name=%s, description=%s, price=%s, image_url=%s, category=%s, stock=%s
             WHERE id=%s AND seller_id=%s RETURNING {PRODUCT_COLS}
         """, payload + (pid, s["id"]))
         row = cur.fetchone()
@@ -626,19 +643,13 @@ def seller_orders():
         u, s = seller_required(cur)
         cur.execute("""
             SELECT oi.id, oi.order_id, oi.product_id, oi.product_name, oi.quantity, oi.price, oi.subtotal,
-                   oi.commission_amount, oi.seller_earning, oi.credited_at, oi.cost_price,
-                   oi.discount_amount, oi.discount_by,
+                   oi.commission_amount, oi.seller_earning, oi.credited_at,
+                   oi.coupon_discount, oi.coupon_by, o.coupon_code,
                    o.status, o.customer_name, o.phone, o.address, o.city, o.payment_method, o.created_at
             FROM order_items oi JOIN orders o ON o.id = oi.order_id
             WHERE oi.seller_id=%s ORDER BY oi.id DESC LIMIT 300
         """, (s["id"],))
-        rate = commission_rate(cur)
-        rows = cur.fetchall()
-        for r in rows:
-            r["profit"], r["profit_is_estimate"] = item_profit(r, rate)
-            r["cost_total"] = None if r["cost_price"] is None else Decimal(str(r["cost_price"])) * int(r["quantity"])
-            r.pop("discount_by", None)
-        return ok(orders=rows)
+        return ok(orders=cur.fetchall())
 
 
 @bp.route("/api/seller/wallet", methods=["GET"])
@@ -930,6 +941,10 @@ def _process_withdrawal(wid, approve):
             raise ApiError(f"This request is already {w['status']}", 409)
         cur.execute("""UPDATE withdrawals SET status=%s, admin_note=%s, processed_by=%s, processed_at=NOW()
                        WHERE id=%s""", ("approved" if approve else "rejected", note, admin["user_id"], wid))
+        if approve:  # the paid amount leaves the "all sellers' money" bucket of the admin wallet
+            cur.execute("""INSERT INTO admin_wallet_tx (bucket, type, amount, seller_id, withdrawal_id, note)
+                           VALUES ('seller_funds','withdrawal',%s,%s,%s,%s)""",
+                        (-w["amount"], w["seller_id"], wid, f"Withdrawal #{wid} paid to seller"))
         if not approve:  # give the held money back to the seller wallet
             cur.execute("""INSERT INTO seller_transactions (seller_id, type, amount, withdrawal_id, note)
                            VALUES (%s,'withdrawal_refund',%s,%s,%s)""",
@@ -967,8 +982,12 @@ def admin_marketplace():
             FROM reviews r JOIN products p ON p.id=r.product_id JOIN users u ON u.id=r.user_id
             ORDER BY r.id DESC LIMIT 100
         """)
+        reviews = cur.fetchall()
+        cur.execute("SELECT COALESCE(SUM(discount_amount),0) AS v FROM orders WHERE coupon_by='platform'")
+        platform_coupon_cost = cur.fetchone()["v"]
         return ok(settings=settings, seller_counts=seller_counts, commission_earned=c["v"],
-                  seller_sales=c["gross"], withdrawals=w, reviews=cur.fetchall())
+                  seller_sales=c["gross"], withdrawals=w, reviews=reviews,
+                  platform_coupon_cost=platform_coupon_cost)
 
 
 @bp.route("/api/admin/marketplace/settings", methods=["PUT"])
@@ -1147,328 +1166,6 @@ def admin_seller_application_reject(aid):
 
 
 # ---------------------------------------------------------------------
-# COUPONS (seller coupons are paid by the seller, admin coupons by Zento)
-# ---------------------------------------------------------------------
-def _split_discount(total, amounts):
-    """Share `total` across `amounts` in proportion; the last one absorbs rounding."""
-    base = sum(amounts)
-    parts, used = [], Decimal("0")
-    for i, a in enumerate(amounts):
-        if i == len(amounts) - 1:
-            share = total - used
-        else:
-            share = q2(total * a / base) if base else Decimal("0")
-        parts.append(share)
-        used += share
-    return parts
-
-
-def apply_coupon(cur, code, user_id, lines, consume=False):
-    """
-    lines: [{"id": product_id, "subtotal": number}, ...]
-    Returns {"coupon": {...}, "discount_total": Decimal, "discounts": [Decimal per line]}.
-    consume=True locks the coupon and counts one use (call inside the order transaction).
-    """
-    code = text(code, 40).upper()
-    if not code:
-        raise ApiError("Enter a coupon code")
-    d = cur.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    d.execute("SELECT c.*, s.store_name, s.status AS seller_status FROM coupons c "
-              "LEFT JOIN sellers s ON s.id=c.seller_id WHERE c.code=%s" + (" FOR UPDATE OF c" if consume else ""), (code,))
-    c = d.fetchone()
-    if not c or not c["active"]:
-        raise ApiError("This coupon code is not valid")
-    if c["seller_id"] and c["seller_status"] != "approved":
-        raise ApiError("This coupon code is not valid")
-    now = datetime.datetime.now(datetime.timezone.utc)
-    if c["starts_at"] and c["starts_at"] > now:
-        raise ApiError("This coupon is not active yet")
-    if c["expires_at"] and c["expires_at"] < now:
-        raise ApiError("This coupon has expired")
-    if c["usage_limit"] is not None and c["used_count"] >= c["usage_limit"]:
-        raise ApiError("This coupon has been fully used")
-    if c["per_user_limit"]:
-        d.execute("SELECT COUNT(*) AS n FROM orders WHERE user_id=%s AND coupon_id=%s", (user_id, c["id"]))
-        if d.fetchone()["n"] >= c["per_user_limit"]:
-            raise ApiError("You have already used this coupon")
-
-    rows = []
-    for l in lines:
-        d.execute("SELECT seller_id FROM products WHERE id=%s", (l["id"],))
-        r = d.fetchone()
-        rows.append((Decimal(str(l["subtotal"])), r["seller_id"] if r else None))
-    if c["seller_id"]:
-        idx = [i for i, (_, sid) in enumerate(rows) if sid == c["seller_id"]]
-        if not idx:
-            raise ApiError(f"This coupon only works on products from {c['store_name']}")
-    else:
-        idx = list(range(len(rows)))
-    amounts = [rows[i][0] for i in idx]
-    base = sum(amounts)
-    if base < Decimal(c["min_order"] or 0):
-        raise ApiError(f"Minimum order for this coupon is ৳{Decimal(c['min_order']):.0f}"
-                       + (f" (on {c['store_name']} products)" if c["seller_id"] else ""))
-
-    if c["discount_type"] == "percent":
-        total = q2(base * Decimal(c["value"]) / 100)
-        if c["max_discount"] is not None:
-            total = min(total, Decimal(c["max_discount"]))
-    else:
-        total = Decimal(c["value"])
-    total = min(q2(total), base)
-
-    discounts = [Decimal("0")] * len(rows)
-    for i, share in zip(idx, _split_discount(total, amounts)):
-        discounts[i] = share
-
-    if consume:
-        d.execute("UPDATE coupons SET used_count=used_count+1 WHERE id=%s", (c["id"],))
-    funded_by = "seller" if c["seller_id"] else "platform"
-    return {"coupon": {"id": c["id"], "code": c["code"], "funded_by": funded_by,
-                       "store_name": c.get("store_name") or ""},
-            "discount_total": total, "discounts": discounts}
-
-
-@bp.route("/api/coupons/validate", methods=["POST"])
-@api
-def coupon_validate():
-    u = current_user()
-    d = request.get_json(silent=True) or {}
-    items = d.get("items") or []
-    with db() as (conn, cur):
-        lines, subtotal = [], Decimal("0")
-        for it in items:
-            try:
-                qty = int(it.get("quantity", 0))
-            except Exception:
-                continue
-            if qty < 1:
-                continue
-            cur.execute("SELECT id, price FROM products WHERE id=%s", (it.get("id"),))
-            p = cur.fetchone()
-            if not p and it.get("name"):
-                cur.execute("SELECT id, price FROM products WHERE LOWER(TRIM(name))=LOWER(TRIM(%s)) ORDER BY id LIMIT 1",
-                            (str(it.get("name")),))
-                p = cur.fetchone()
-            if not p:
-                continue
-            line = Decimal(p["price"]) * qty
-            lines.append({"id": p["id"], "subtotal": line})
-            subtotal += line
-        if not lines:
-            raise ApiError("Your cart is empty")
-        r = apply_coupon(cur, d.get("code"), u["user_id"], lines, consume=False)
-    return ok(message=f"Coupon {r['coupon']['code']} applied", code=r["coupon"]["code"],
-              funded_by=r["coupon"]["funded_by"], discount=r["discount_total"], subtotal=subtotal)
-
-
-def coupon_payload(d):
-    code = re.sub(r"[^A-Za-z0-9_-]", "", text(d.get("code"), 40)).upper()
-    if len(code) < 3:
-        raise ApiError("Coupon code must be at least 3 letters or numbers (no spaces)")
-    dtype = text(d.get("discount_type"), 10).lower()
-    if dtype not in ("percent", "fixed"):
-        raise ApiError("Discount type must be percent or fixed")
-    try:
-        value = q2(d.get("value"))
-    except Exception:
-        raise ApiError("Enter the discount value")
-    if value <= 0 or (dtype == "percent" and value > 100):
-        raise ApiError("Percent must be between 1 and 100" if dtype == "percent" else "Discount amount must be more than 0")
-
-    def opt_money(key):
-        v = d.get(key)
-        if v in (None, ""):
-            return None
-        try:
-            v = q2(v)
-        except Exception:
-            raise ApiError(f"Invalid {key.replace('_', ' ')}")
-        if v < 0:
-            raise ApiError(f"Invalid {key.replace('_', ' ')}")
-        return v
-
-    def opt_int(key, default):
-        v = d.get(key)
-        if v in (None, ""):
-            return default
-        try:
-            v = int(v)
-        except Exception:
-            raise ApiError(f"Invalid {key.replace('_', ' ')}")
-        if v < 0:
-            raise ApiError(f"Invalid {key.replace('_', ' ')}")
-        return v or default
-
-    def opt_date(key, tail):
-        v = text(d.get(key), 10)
-        if not v:
-            return None
-        try:
-            datetime.date.fromisoformat(v)
-        except Exception:
-            raise ApiError("Dates must look like 2026-12-31")
-        return f"{v} {tail}+06"   # Bangladesh time
-
-    starts, expires = opt_date("starts_at", "00:00:00"), opt_date("expires_at", "23:59:59")
-    return {
-        "code": code, "discount_type": dtype, "value": value,
-        "max_discount": opt_money("max_discount") if dtype == "percent" else None,
-        "min_order": opt_money("min_order") or Decimal("0"),
-        "usage_limit": opt_int("usage_limit", None),
-        "per_user_limit": opt_int("per_user_limit", 1),
-        "starts_at": starts, "expires_at": expires,
-        "active": bool(d.get("active", True)),
-    }
-
-
-COUPON_COLS = ("id, code, seller_id, discount_type, value, max_discount, min_order, usage_limit, per_user_limit, "
-               "used_count, starts_at, expires_at, active, created_at")
-
-
-def _create_coupon(cur, seller_id, d):
-    c = coupon_payload(d)
-    cur.execute("SELECT 1 FROM coupons WHERE code=%s", (c["code"],))
-    if cur.fetchone():
-        raise ApiError("This coupon code already exists. Choose another code.", 409)
-    cur.execute("""
-        INSERT INTO coupons (code, seller_id, discount_type, value, max_discount, min_order, usage_limit,
-                             per_user_limit, starts_at, expires_at, active)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
-    """, (c["code"], seller_id, c["discount_type"], c["value"], c["max_discount"], c["min_order"],
-          c["usage_limit"], c["per_user_limit"], c["starts_at"], c["expires_at"], c["active"]))
-    return cur.fetchone()["id"]
-
-
-def _update_coupon(cur, cid, seller_id, d):
-    cur.execute("SELECT id, seller_id FROM coupons WHERE id=%s", (cid,))
-    row = cur.fetchone()
-    if not row or row["seller_id"] != seller_id:
-        raise ApiError("Coupon not found", 404)
-    if set(d.keys()) <= {"active"}:
-        cur.execute("UPDATE coupons SET active=%s WHERE id=%s", (bool(d.get("active")), cid))
-        return
-    c = coupon_payload(d)
-    cur.execute("SELECT 1 FROM coupons WHERE code=%s AND id<>%s", (c["code"], cid))
-    if cur.fetchone():
-        raise ApiError("This coupon code already exists. Choose another code.", 409)
-    cur.execute("""
-        UPDATE coupons SET code=%s, discount_type=%s, value=%s, max_discount=%s, min_order=%s, usage_limit=%s,
-               per_user_limit=%s, starts_at=%s, expires_at=%s, active=%s WHERE id=%s
-    """, (c["code"], c["discount_type"], c["value"], c["max_discount"], c["min_order"], c["usage_limit"],
-          c["per_user_limit"], c["starts_at"], c["expires_at"], c["active"], cid))
-
-
-def _delete_coupon(cur, cid, seller_id):
-    cur.execute("SELECT id, seller_id, used_count FROM coupons WHERE id=%s", (cid,))
-    row = cur.fetchone()
-    if not row or row["seller_id"] != seller_id:
-        raise ApiError("Coupon not found", 404)
-    if row["used_count"] > 0:
-        cur.execute("UPDATE coupons SET active=FALSE WHERE id=%s", (cid,))
-        return "This coupon was already used, so it was switched off instead of deleted."
-    cur.execute("DELETE FROM coupons WHERE id=%s", (cid,))
-    return "Coupon deleted"
-
-
-@bp.route("/api/seller/coupons", methods=["GET"])
-@api
-def seller_coupons():
-    current_user()
-    with db() as (conn, cur):
-        u, s = seller_required(cur)
-        cur.execute(f"""SELECT {COUPON_COLS},
-                        COALESCE((SELECT SUM(discount_amount) FROM order_items oi WHERE oi.coupon_id=coupons.id),0) AS discount_given
-                        FROM coupons WHERE seller_id=%s ORDER BY id DESC""", (s["id"],))
-        return ok(coupons=cur.fetchall())
-
-
-@bp.route("/api/seller/coupons", methods=["POST"])
-@api
-def seller_coupon_create():
-    d = request.get_json(silent=True) or {}
-    current_user()
-    with db() as (conn, cur):
-        u, s = seller_required(cur)
-        _create_coupon(cur, s["id"], d)
-    return ok(message="Coupon created. Customers can use it on your products.")
-
-
-@bp.route("/api/seller/coupons/<int:cid>", methods=["PUT"])
-@api
-def seller_coupon_update(cid):
-    d = request.get_json(silent=True) or {}
-    current_user()
-    with db() as (conn, cur):
-        u, s = seller_required(cur)
-        _update_coupon(cur, cid, s["id"], d)
-    return ok(message="Coupon saved")
-
-
-@bp.route("/api/seller/coupons/<int:cid>", methods=["DELETE"])
-@api
-def seller_coupon_delete(cid):
-    current_user()
-    with db() as (conn, cur):
-        u, s = seller_required(cur)
-        msg = _delete_coupon(cur, cid, s["id"])
-    return ok(message=msg)
-
-
-@bp.route("/api/admin/coupons", methods=["GET"])
-@api
-def admin_coupons():
-    admin_required()
-    with db() as (conn, cur):
-        cur.execute(f"""SELECT {COUPON_COLS}, (SELECT store_name FROM sellers s WHERE s.id=coupons.seller_id) AS store_name,
-                        COALESCE((SELECT SUM(discount_amount) FROM order_items oi WHERE oi.coupon_id=coupons.id),0) AS discount_given
-                        FROM coupons ORDER BY (seller_id IS NULL) DESC, id DESC""")
-        return ok(coupons=cur.fetchall())
-
-
-@bp.route("/api/admin/coupons", methods=["POST"])
-@api
-def admin_coupon_create():
-    admin_required()
-    d = request.get_json(silent=True) or {}
-    with db() as (conn, cur):
-        _create_coupon(cur, None, d)
-    return ok(message="Coupon created. Zento pays this discount; sellers still get their full price.")
-
-
-@bp.route("/api/admin/coupons/<int:cid>", methods=["PUT"])
-@api
-def admin_coupon_update(cid):
-    admin_required()
-    d = request.get_json(silent=True) or {}
-    with db() as (conn, cur):
-        cur.execute("SELECT seller_id FROM coupons WHERE id=%s", (cid,))
-        row = cur.fetchone()
-        if not row:
-            raise ApiError("Coupon not found", 404)
-        if row["seller_id"] is not None:       # admin may only switch seller coupons on/off
-            if not set(d.keys()) <= {"active"}:
-                raise ApiError("Only the seller can edit a seller coupon. You can switch it off.", 403)
-            cur.execute("UPDATE coupons SET active=%s WHERE id=%s", (bool(d.get("active")), cid))
-        else:
-            _update_coupon(cur, cid, None, d)
-    return ok(message="Coupon saved")
-
-
-@bp.route("/api/admin/coupons/<int:cid>", methods=["DELETE"])
-@api
-def admin_coupon_delete(cid):
-    admin_required()
-    with db() as (conn, cur):
-        cur.execute("SELECT seller_id FROM coupons WHERE id=%s", (cid,))
-        row = cur.fetchone()
-        if not row:
-            raise ApiError("Coupon not found", 404)
-        msg = _delete_coupon(cur, cid, row["seller_id"])
-    return ok(message=msg)
-
-
-# ---------------------------------------------------------------------
 # PAGES
 # ---------------------------------------------------------------------
 @bp.route("/seller")
@@ -1491,6 +1188,377 @@ def store_page(slug):
 
 
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# COUPONS
+#   * Seller coupon : only for that seller's products. The seller pays the discount
+#                     (commission is still taken on the original price).
+#   * Admin coupon  : works on the whole cart. Zento pays the discount, sellers still
+#                     receive their normal earning.
+# ---------------------------------------------------------------------
+COUPON_TYPES = ("percent", "fixed")
+BD_TZ = datetime.timezone(datetime.timedelta(hours=6))
+
+
+def delivery_fee_for(subtotal):
+    """Same rule as app.py create_order (free delivery from 100)."""
+    return Decimal(0) if Decimal(subtotal) >= 100 else Decimal(5)
+
+
+def coupon_quote(cur, code, user_id, lines, lock=False):
+    """
+    Validate a coupon for a cart and work out the discount.
+    cur   : RealDictCursor
+    lines : [{"product_id", "seller_id", "subtotal"(Decimal)}]
+    Returns dict(coupon_id, code, funded_by, discount, shares[aligned with lines]).
+    Raises ApiError with a customer friendly message.
+    """
+    code = re.sub(r"[^A-Za-z0-9_-]", "", text(code, 40)).upper()
+    if not code:
+        raise ApiError("Enter a coupon code")
+    cur.execute("SELECT * FROM coupons WHERE UPPER(code)=%s" + (" FOR UPDATE" if lock else ""), (code,))
+    c = cur.fetchone()
+    if not c or not c["is_active"]:
+        raise ApiError("This coupon code is not valid")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if c["starts_at"] and c["starts_at"] > now:
+        raise ApiError("This coupon is not active yet")
+    if c["expires_at"] and c["expires_at"] < now:
+        raise ApiError("This coupon has expired")
+    if c["usage_limit"] is not None and c["used_count"] >= c["usage_limit"]:
+        raise ApiError("This coupon has reached its usage limit")
+    cur.execute("SELECT COUNT(*) AS n FROM coupon_redemptions WHERE coupon_id=%s AND user_id=%s", (c["id"], user_id))
+    if cur.fetchone()["n"] >= c["per_user_limit"]:
+        raise ApiError("You have already used this coupon")
+
+    if c["seller_id"]:
+        cur.execute("SELECT status, store_name FROM sellers WHERE id=%s", (c["seller_id"],))
+        sel = cur.fetchone()
+        if not sel or sel["status"] != "approved":
+            raise ApiError("This coupon code is not valid")
+        eligible_idx = [i for i, l in enumerate(lines) if l.get("seller_id") == c["seller_id"]]
+        if not eligible_idx:
+            raise ApiError(f"This coupon works only on products from {sel['store_name']}")
+        funded_by = "seller"
+    else:
+        eligible_idx = list(range(len(lines)))
+        funded_by = "platform"
+
+    base = sum((Decimal(lines[i]["subtotal"]) for i in eligible_idx), Decimal(0))
+    min_order = Decimal(c["min_order"] or 0)
+    if base < min_order:
+        where = " from this store" if funded_by == "seller" else ""
+        raise ApiError(f"Spend at least \u09f3{min_order:.2f}{where} to use this coupon")
+
+    value = Decimal(c["discount_value"])
+    if c["discount_type"] == "percent":
+        disc = q2(base * value / 100)
+        if c["max_discount"] is not None:
+            disc = min(disc, Decimal(c["max_discount"]))
+    else:
+        disc = value
+    disc = min(disc, base)
+    if funded_by == "seller":
+        # the seller can never be charged more than their share after commission
+        disc = min(disc, q2(base * (100 - commission_rate(cur)) / 100))
+    disc = q2(disc)
+    if disc <= 0:
+        raise ApiError("This coupon gives no discount on your cart")
+
+    shares = [Decimal(0)] * len(lines)
+    remaining = disc
+    for n, i in enumerate(eligible_idx):
+        if n == len(eligible_idx) - 1:
+            share = remaining
+        else:
+            share = min(q2(disc * Decimal(lines[i]["subtotal"]) / base), remaining)
+        shares[i] = share
+        remaining -= share
+    return {"coupon_id": c["id"], "code": c["code"], "funded_by": funded_by,
+            "discount": disc, "shares": shares}
+
+
+def coupon_redeem(cur, quote, user_id, order_id):
+    """Count the use of a coupon (cur = RealDictCursor in the same transaction as the order)."""
+    cur.execute("INSERT INTO coupon_redemptions (coupon_id, user_id, order_id, amount) VALUES (%s,%s,%s,%s)",
+                (quote["coupon_id"], user_id, order_id, quote["discount"]))
+    cur.execute("UPDATE coupons SET used_count = used_count + 1 WHERE id=%s", (quote["coupon_id"],))
+
+
+def _cart_lines(cur, items):
+    """Price a cart from the database (never trust prices sent by the browser)."""
+    lines = []
+    for it in items or []:
+        try:
+            qty = int(it.get("quantity", 0))
+        except Exception:
+            continue
+        if qty < 1:
+            continue
+        cur.execute("SELECT id, price, seller_id FROM products WHERE id=%s", (it.get("id"),))
+        p = cur.fetchone() if it.get("id") is not None else None
+        name = text(it.get("name"), 200)
+        if not p and name:
+            cur.execute("SELECT id, price, seller_id FROM products WHERE LOWER(TRIM(name))=LOWER(TRIM(%s)) ORDER BY id LIMIT 1", (name,))
+            p = cur.fetchone()
+        if not p:
+            continue
+        lines.append({"product_id": p["id"], "seller_id": p["seller_id"], "subtotal": q2(Decimal(p["price"]) * qty)})
+    return lines
+
+
+@bp.route("/api/coupons/validate", methods=["POST"])
+@api
+def coupon_validate():
+    d = request.get_json(silent=True) or {}
+    u = current_user()
+    with db() as (conn, cur):
+        lines = _cart_lines(cur, d.get("items"))
+        if not lines:
+            raise ApiError("Your cart is empty")
+        quote = coupon_quote(cur, d.get("code"), u["user_id"], lines)
+        subtotal = sum((l["subtotal"] for l in lines), Decimal(0))
+        delivery = delivery_fee_for(subtotal)
+        total = subtotal + delivery - quote["discount"]
+        label = "Store coupon" if quote["funded_by"] == "seller" else "Zento coupon"
+        return ok(code=quote["code"], discount=quote["discount"], subtotal=subtotal,
+                  delivery_fee=delivery, total=total, funded_by=quote["funded_by"],
+                  message=f"{label} {quote['code']} applied: you save \u09f3{quote['discount']:.2f}")
+
+
+def _parse_day(value, end_of_day=False):
+    value = text(value, 40)
+    if not value:
+        return None
+    try:
+        day = datetime.date.fromisoformat(value[:10])
+    except ValueError:
+        raise ApiError("Enter a valid date")
+    t = datetime.time(23, 59, 59) if end_of_day else datetime.time(0, 0, 0)
+    return datetime.datetime.combine(day, t, tzinfo=BD_TZ)
+
+
+def _coupon_fields(d, is_seller):
+    code = re.sub(r"[^A-Za-z0-9_-]", "", text(d.get("code"), 30)).upper()
+    if len(code) < 3:
+        raise ApiError("Coupon code must be 3 to 30 letters or numbers")
+    dtype = text(d.get("discount_type"), 10).lower()
+    if dtype not in COUPON_TYPES:
+        raise ApiError("Choose percent or fixed amount")
+    try:
+        value = q2(d.get("discount_value"))
+    except Exception:
+        raise ApiError("Enter the discount value")
+    if value <= 0:
+        raise ApiError("Discount must be more than 0")
+    if dtype == "percent" and value > (90 if is_seller else 100):
+        raise ApiError("Percent discount cannot be more than " + ("90" if is_seller else "100"))
+
+    def opt_money(key, label):
+        raw = d.get(key)
+        if raw in (None, ""):
+            return None
+        try:
+            v = q2(raw)
+        except Exception:
+            raise ApiError(f"{label} must be a number")
+        if v < 0:
+            raise ApiError(f"{label} cannot be negative")
+        return v
+
+    def opt_int(key, label, default=None):
+        raw = d.get(key)
+        if raw in (None, ""):
+            return default
+        try:
+            v = int(raw)
+        except Exception:
+            raise ApiError(f"{label} must be a whole number")
+        if v < 1:
+            raise ApiError(f"{label} must be at least 1")
+        return v
+
+    starts, expires = _parse_day(d.get("starts_at")), _parse_day(d.get("expires_at"), True)
+    if starts and expires and expires < starts:
+        raise ApiError("Expiry date must be after the start date")
+    return {
+        "code": code, "discount_type": dtype, "discount_value": value,
+        "max_discount": opt_money("max_discount", "Max discount") if dtype == "percent" else None,
+        "min_order": opt_money("min_order", "Minimum order") or Decimal(0),
+        "usage_limit": opt_int("usage_limit", "Total usage limit"),
+        "per_user_limit": opt_int("per_user_limit", "Per customer limit", 1),
+        "starts_at": starts, "expires_at": expires,
+    }
+
+
+def _insert_coupon(cur, seller_id, f):
+    cur.execute("SELECT 1 FROM coupons WHERE UPPER(code)=%s", (f["code"],))
+    if cur.fetchone():
+        raise ApiError("This coupon code already exists. Choose another code.", 409)
+    cur.execute("""
+        INSERT INTO coupons (code, seller_id, discount_type, discount_value, max_discount, min_order,
+                             usage_limit, per_user_limit, starts_at, expires_at)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+    """, (f["code"], seller_id, f["discount_type"], f["discount_value"], f["max_discount"], f["min_order"],
+          f["usage_limit"], f["per_user_limit"], f["starts_at"], f["expires_at"]))
+    return cur.fetchone()["id"]
+
+
+COUPON_LIST_SQL = """
+    SELECT c.*, s.store_name,
+           COALESCE((SELECT SUM(r.amount) FROM coupon_redemptions r WHERE r.coupon_id=c.id), 0) AS total_discount
+    FROM coupons c LEFT JOIN sellers s ON s.id = c.seller_id
+    {where} ORDER BY c.id DESC LIMIT 300
+"""
+
+
+@bp.route("/api/seller/coupons", methods=["GET"])
+@api
+def seller_coupons():
+    current_user()
+    with db() as (conn, cur):
+        u, s = seller_required(cur)
+        cur.execute(COUPON_LIST_SQL.format(where="WHERE c.seller_id=%s"), (s["id"],))
+        return ok(coupons=cur.fetchall())
+
+
+@bp.route("/api/seller/coupons", methods=["POST"])
+@api
+def seller_create_coupon():
+    d = request.get_json(silent=True) or {}
+    current_user()
+    with db() as (conn, cur):
+        u, s = seller_required(cur)
+        cid = _insert_coupon(cur, s["id"], _coupon_fields(d, True))
+    return ok(message="Coupon created. The discount is paid from your sale amount.", coupon_id=cid), 201
+
+
+@bp.route("/api/seller/coupons/<int:cid>", methods=["PUT"])
+@api
+def seller_toggle_coupon(cid):
+    d = request.get_json(silent=True) or {}
+    current_user()
+    with db() as (conn, cur):
+        u, s = seller_required(cur)
+        cur.execute("UPDATE coupons SET is_active=%s WHERE id=%s AND seller_id=%s RETURNING id",
+                    (bool(d.get("is_active")), cid, s["id"]))
+        if not cur.fetchone():
+            raise ApiError("Coupon not found", 404)
+    return ok(message="Coupon updated")
+
+
+@bp.route("/api/seller/coupons/<int:cid>", methods=["DELETE"])
+@api
+def seller_delete_coupon(cid):
+    current_user()
+    with db() as (conn, cur):
+        u, s = seller_required(cur)
+        cur.execute("DELETE FROM coupons WHERE id=%s AND seller_id=%s RETURNING id", (cid, s["id"]))
+        if not cur.fetchone():
+            raise ApiError("Coupon not found", 404)
+    return ok(message="Coupon deleted")
+
+
+@bp.route("/api/admin/coupons", methods=["GET"])
+@api
+def admin_coupons():
+    admin_required()
+    with db() as (conn, cur):
+        cur.execute(COUPON_LIST_SQL.format(where=""))
+        return ok(coupons=cur.fetchall())
+
+
+@bp.route("/api/admin/coupons", methods=["POST"])
+@api
+def admin_create_coupon():
+    admin_required()
+    d = request.get_json(silent=True) or {}
+    with db() as (conn, cur):
+        cid = _insert_coupon(cur, None, _coupon_fields(d, False))
+    return ok(message="Coupon created. Zento pays the discount; sellers still get their full share.", coupon_id=cid), 201
+
+
+@bp.route("/api/admin/coupons/<int:cid>", methods=["PUT"])
+@api
+def admin_toggle_coupon(cid):
+    admin_required()
+    d = request.get_json(silent=True) or {}
+    with db() as (conn, cur):
+        cur.execute("UPDATE coupons SET is_active=%s WHERE id=%s RETURNING id", (bool(d.get("is_active")), cid))
+        if not cur.fetchone():
+            raise ApiError("Coupon not found", 404)
+    return ok(message="Coupon updated")
+
+
+@bp.route("/api/admin/coupons/<int:cid>", methods=["DELETE"])
+@api
+def admin_delete_coupon(cid):
+    admin_required()
+    with db() as (conn, cur):
+        cur.execute("DELETE FROM coupons WHERE id=%s RETURNING id", (cid,))
+        if not cur.fetchone():
+            raise ApiError("Coupon not found", 404)
+    return ok(message="Coupon deleted")
+
+
+# ---------------------------------------------------------------------
+# ADMIN WALLET
+# ---------------------------------------------------------------------
+WALLET_BUCKETS = ("commission", "seller_funds")
+
+
+@bp.route("/api/admin/wallet", methods=["GET"])
+@api
+def admin_wallet():
+    admin_required()
+    bucket = text(request.args.get("bucket"), 20)
+    with db() as (conn, cur):
+        cur.execute("SELECT bucket, COALESCE(SUM(amount),0) AS v FROM admin_wallet_tx GROUP BY bucket")
+        bal = {r["bucket"]: r["v"] for r in cur.fetchall()}
+        cur.execute("SELECT COALESCE(SUM(amount),0) AS v FROM admin_wallet_tx WHERE type='commission'")
+        commission_total = cur.fetchone()["v"]
+        cur.execute("SELECT COALESCE(-SUM(amount),0) AS v FROM admin_wallet_tx WHERE type='coupon_cost'")
+        coupon_cost = cur.fetchone()["v"]
+        cur.execute("SELECT COALESCE(-SUM(amount),0) AS v FROM admin_wallet_tx WHERE type='withdrawal'")
+        paid_out = cur.fetchone()["v"]
+        cur.execute("SELECT COALESCE(SUM(amount),0) AS v FROM seller_transactions")
+        sellers_wallets = cur.fetchone()["v"]
+        cur.execute("SELECT COALESCE(SUM(amount),0) AS v FROM withdrawals WHERE status='pending'")
+        pending = cur.fetchone()["v"]
+        where, args = ("WHERE t.bucket=%s", (bucket,)) if bucket in WALLET_BUCKETS else ("", ())
+        cur.execute(f"""
+            SELECT t.*, s.store_name FROM admin_wallet_tx t LEFT JOIN sellers s ON s.id = t.seller_id
+            {where} ORDER BY t.id DESC LIMIT 200
+        """, args)
+        tx = cur.fetchall()
+        commission, funds = bal.get("commission", Decimal(0)), bal.get("seller_funds", Decimal(0))
+        return ok(commission_balance=commission, seller_funds_balance=funds, total_balance=commission + funds,
+                  commission_earned=commission_total, coupon_cost=coupon_cost, total_paid_out=paid_out,
+                  sellers_wallets_total=sellers_wallets, withdrawals_pending=pending, transactions=tx)
+
+
+@bp.route("/api/admin/wallet/entry", methods=["POST"])
+@api
+def admin_wallet_entry():
+    """Manual correction, e.g. when the owner takes his own commission out."""
+    admin_required()
+    d = request.get_json(silent=True) or {}
+    bucket = text(d.get("bucket"), 20)
+    if bucket not in WALLET_BUCKETS:
+        raise ApiError("Choose a wallet")
+    try:
+        amount = q2(d.get("amount"))
+    except Exception:
+        raise ApiError("Enter a valid amount")
+    if amount <= 0:
+        raise ApiError("Amount must be more than 0")
+    if text(d.get("direction"), 10) == "remove":
+        amount = -amount
+    note = text(d.get("note"), 200) or ("Manual deposit" if amount > 0 else "Manual withdrawal")
+    with db() as (conn, cur):
+        cur.execute("INSERT INTO admin_wallet_tx (bucket, type, amount, note) VALUES (%s,'manual',%s,%s)", (bucket, amount, note))
+    return ok(message="Wallet updated"), 201
+
+
 def init_marketplace(app, get_user, admin_user, base_dir, ensure_base=None):
     _H.update(get_user=get_user, admin_user=admin_user, base_dir=base_dir)
     try:
