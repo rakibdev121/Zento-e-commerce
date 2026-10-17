@@ -45,15 +45,6 @@ def admin_home():
 def admin_files(filename):
     return send_from_directory(os.path.join(BASE_DIR, "admin"), filename)
 
-@app.route("/seller")
-@app.route("/seller/")
-@app.route("/seller/<path:rest>")
-def old_seller_link(rest=""):
-    """The Seller Center is a separate website now. Old /seller/ links on the store go there."""
-    target = os.environ.get("SELLER_APP_URL", "").strip().rstrip("/")
-    return redirect(target or "/", code=302)
-
-
 @app.route("/<path:filename>")
 def frontend_files(filename):
     if filename.startswith("api/"):
@@ -61,7 +52,7 @@ def frontend_files(filename):
 
     # Never serve server code, secrets or the separate Seller Center from the public store
     parts = [p for p in filename.replace("\\", "/").split("/") if p]
-    blocked_dirs = {"backend", "seller_app", "node_modules", "seller"}
+    blocked_dirs = {"backend", "node_modules"}
     if (not parts or parts[0].lower() in blocked_dirs
             or any(p.startswith(".") for p in parts)
             or parts[-1].lower().endswith((".py", ".env", ".md", ".txt", ".json", ".lock", ".log"))

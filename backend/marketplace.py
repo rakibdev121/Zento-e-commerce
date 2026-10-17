@@ -31,12 +31,12 @@ from functools import wraps
 
 import psycopg2
 import psycopg2.extras
-from flask import Blueprint, request, send_from_directory, abort
+from flask import Blueprint, request, send_from_directory, abort, redirect
 from werkzeug.security import generate_password_hash, check_password_hash
 
 log = logging.getLogger("zento.marketplace")
 bp = Blueprint("marketplace", __name__)             # customer site + admin panel
-seller_bp = Blueprint("seller_portal", __name__)    # Seller Center: runs as its OWN service (seller_app/)
+seller_bp = Blueprint("seller_portal", __name__)    # seller panel + seller APK routes (/api/seller/*), kept apart from the customer code
 _H = {}  # helpers injected from app.py
 
 DEFAULT_SETTINGS = {
@@ -565,7 +565,7 @@ def seller_me():
         out = dict(s)
         out.pop("user_id", None)
         data = {"seller": out, "login_id": u.get("email", ""),
-                "store_base_url": os.environ.get("STORE_PUBLIC_URL", "").rstrip("/")}
+                "store_base_url": (os.environ.get("STORE_PUBLIC_URL", "").rstrip("/") or request.host_url.rstrip("/"))}
         if s["status"] == "approved":
             data["wallet"] = wallet_summary(cur, s["id"])
             cur.execute("SELECT COUNT(*) AS n FROM products WHERE seller_id=%s", (s["id"],))
@@ -1265,7 +1265,7 @@ def admin_seller_application_approve(aid):
     return ok(message="Approved. Send these login details to the seller." if not emailed
               else "Approved. The login details were also sent to the seller's email.",
               login_id=a["email"], password=password, store_name=a["store_name"], phone=a["phone"], emailed=emailed,
-              login_url=seller_url())
+              login_url=seller_url() + "/")
 
 
 @bp.route("/api/admin/seller-applications/<int:aid>/reject", methods=["POST"])
@@ -1836,15 +1836,15 @@ def base_url():
 
 
 def seller_url():
-    """Public address of the separate Seller Center service (set SELLER_APP_URL in its host)."""
-    return os.environ.get("SELLER_APP_URL", "").rstrip("/")
+    """Address of the seller panel (same server, /seller/). SELLER_APP_URL can override it."""
+    return (os.environ.get("SELLER_APP_URL", "").rstrip("/") or f"{base_url()}/seller")
 
 
 def notify_seller_credentials(email, owner, store, password):
     return send_email(email, "Your Zento seller account is ready", f"""
       <p>Hello {html.escape(owner)}, your store <b>{html.escape(store)}</b> was approved.</p>
       <p><b>Login ID:</b> {html.escape(email)}<br><b>Temporary password:</b> {html.escape(password)}</p>
-      <p>Log in at <a href="{html.escape(seller_url() or base_url())}">{html.escape(seller_url() or base_url())}</a>.
+      <p>Log in at <a href="{html.escape(seller_url())}/">{html.escape(seller_url())}/</a>.
       You will be asked to choose your own password the first time.</p>""")
 
 
@@ -2089,7 +2089,7 @@ def seller_forgot_password():
         cur.execute("UPDATE password_resets SET used_at=NOW() WHERE user_id=%s AND used_at IS NULL", (u["id"],))
         cur.execute("""INSERT INTO password_resets (user_id, token_hash, expires_at)
                        VALUES (%s,%s,NOW() + INTERVAL '30 minutes')""", (u["id"], hashlib.sha256(token.encode()).hexdigest()))
-    link = f"{seller_url() or base_url()}/?reset={token}"
+    link = f"{seller_url()}/?reset={token}"
     send_email(email, "Reset your Zento seller password", f"""<p>Hello {html.escape(str(u['name']))},</p>
       <p>Open this link to choose a new password. It works once and expires in 30 minutes.</p>
       <p><a href="{html.escape(link)}">{html.escape(link)}</a></p>
@@ -2120,6 +2120,21 @@ def seller_reset_password():
 # ---------------------------------------------------------------------
 # PAGES  (the Seller Center page now lives in seller_app/, a separate service)
 # ---------------------------------------------------------------------
+@seller_bp.route("/seller")
+def seller_redirect():
+    return redirect("/seller/", code=302)
+
+
+@seller_bp.route("/seller/")
+def seller_page():
+    return send_from_directory(os.path.join(_H["base_dir"], "seller"), "index.html")
+
+
+@seller_bp.route("/seller/<path:filename>")
+def seller_files(filename):
+    return send_from_directory(os.path.join(_H["base_dir"], "seller"), filename)
+
+
 @bp.route("/store/<slug>")
 def store_page(slug):
     path = os.path.join(_H["base_dir"], "store.html")
@@ -2129,11 +2144,7 @@ def store_page(slug):
 
 
 # ---------------------------------------------------------------------
-def init_marketplace(app, get_user, admin_user, base_dir, ensure_base=None, mode="main"):
-    """
-    mode="main"   -> customer website + admin panel (NO seller routes, NO /seller page)
-    mode="seller" -> only the Seller Center API (used by seller_app/server.py)
-    """
+def init_marketplace(app, get_user, admin_user, base_dir, ensure_base=None):
     _H.update(get_user=get_user, admin_user=admin_user, base_dir=base_dir)
     try:
         if ensure_base:
@@ -2142,7 +2153,5 @@ def init_marketplace(app, get_user, admin_user, base_dir, ensure_base=None, mode
         log.info("Marketplace tables ready")
     except Exception:
         log.exception("Marketplace table setup failed (will retry on next boot)")
-    if mode == "seller":
-        app.register_blueprint(seller_bp)
-    else:
-        app.register_blueprint(bp)
+    app.register_blueprint(bp)
+    app.register_blueprint(seller_bp)
