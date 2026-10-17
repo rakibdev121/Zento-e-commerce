@@ -277,3 +277,21 @@ html.in-app{--safe-top:0px;--safe-bottom:0px}
   .chat.open .chat-conv{display:flex}
   .conv-back{display:grid}
 }
+
+/* ---------- Admin wallet sections ---------- */
+.wl-sec{margin:0 0 22px}
+.wl-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 10px}
+.wl-h h3{margin:0;font-size:15px;font-weight:700;letter-spacing:-.01em}
+.wl-h p{margin:0;color:var(--muted);font-size:12px}
+.wl-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.wl-card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 16px 14px 20px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:4px;overflow:hidden;min-width:0}
+.wl-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--line)}
+.wl-card.brand::before{background:var(--brand)}.wl-card.good::before{background:var(--good)}.wl-card.warn::before{background:var(--warn)}
+.wl-card.bad::before{background:var(--bad)}.wl-card.info::before{background:var(--c1)}.wl-card.violet::before{background:var(--violet)}
+.wl-l{color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.02em}
+.wl-v{font-size:24px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.15}
+.wl-s{color:var(--muted);font-size:11.5px;line-height:1.5}
+.wl-card.hero{background:linear-gradient(135deg,var(--brand-soft),var(--surface))}
+.wl-card.hero .wl-v{font-size:28px}
+.wl-card.bad .wl-v{color:var(--bad)}
+@media (max-width:560px){.wl-grid{grid-template-columns:1fr 1fr}.wl-v{font-size:19px}.wl-card.hero{grid-column:1/-1}.wl-card.hero .wl-v{font-size:24px}}

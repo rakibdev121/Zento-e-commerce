@@ -401,11 +401,16 @@ function vSettings() {
   <section class="card card-pad"><form class="form" id="setForm" style="max-width:640px" novalidate>
     <label class="full">Store name<input id="storeName" value="${esc(store.get("zento_store_name", "Zento"))}"></label>
     <label>Currency<input value="BDT / ৳" readonly></label>
-    <label>Delivery charge<input id="deliveryCharge" type="number" min="0" value="${esc(store.get("zento_delivery_charge", ""))}"></label>
+    <label>Delivery charge<input value="Dhaka division ৳70 · Outside Dhaka ৳130" disabled></label>
     <label class="full">Admin API key (needed to add, edit and delete products)<input id="apiKey" type="password" autocomplete="off" placeholder="ADMIN_API_TOKEN from Render" value="${esc(store.get("zento_admin_api_key", ""))}"></label>
     <label class="full">Low stock alert at (units or fewer)<input id="lowLimit" type="number" min="0" value="${lowLimit()}"></label>
     <div class="full"><button class="btn btn-primary" type="submit">Save Settings</button></div>
-  </form></section>`;
+  </form></section>
+  <section class="card card-pad golive" style="margin-top:16px;max-width:704px">
+    <h2>Go live: clear test data</h2>
+    <p class="sub" style="margin:6px 0 12px">Removes all test orders, wallet history, withdrawals, reviews, chats and the activity log, so you start with real sales. Products, customers, sellers, coupons and admin accounts stay. This cannot be undone.</p>
+    <button class="btn btn-danger" id="resetOpen" type="button">Clear test data…</button>
+  </section>`;
 }
 
 /* ---------- ZENTO MARKETPLACE (sellers, withdrawals, commission, reviews) ---------- */
@@ -488,7 +493,7 @@ async function mpLoadApps() {
   } catch (e) { body.innerHTML = `<tr><td colspan="4"><div class="empty">${esc(e.message)}</div></td></tr>`; }
 }
 function mpCredentials(r) {
-  const msg = `Zento Seller Center\nLogin ID: ${r.login_id}\nPassword: ${r.password}\nLogin at: ${location.origin}/seller/\nPlease change your password after the first login.`;
+  const msg = `Zento Seller Center\nLogin ID: ${r.login_id}\nPassword: ${r.password}\nLogin at: ${r.login_url || "(Seller Center address)"}\nPlease change your password after the first login.`;
   showModal(`<div class="modal-h"><h2>Seller approved</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div>
   <div class="modal-b"><p>Send these details to <b>${esc(r.store_name)}</b> (${esc(r.phone)}). The password is shown only now, so copy it before closing.</p>
   <textarea id="mpCred" readonly rows="5" style="width:100%">${esc(msg)}</textarea></div>
@@ -611,14 +616,14 @@ async function mpLoadAudit() {
 
 /* ---------- Wallet: your commission + the common pool of all customer money ---------- */
 MP.walletFilter = "";
-const wlType = { commission: "Commission", commission_refund: "Commission taken back (return)", coupon_cost: "Zento coupon cost", coupon_cost_refund: "Zento coupon cost given back",
+const wlType = { commission: "Commission", return_charge: "Return charged to seller", commission_refund: "Commission taken back (return)", coupon_cost: "Zento coupon cost", coupon_cost_refund: "Zento coupon cost given back",
   customer_payment: "Customer payment", customer_refund: "Refund to customer", seller_payout: "Seller payout", owner_withdrawal: "Commission taken out" };
 function vWallet() {
   const opts = [["", "All"], ["commission", "Commission wallet"], ["pool", "Customer money pool"]]
     .map(([v, l]) => `<option value="${v}"${v === MP.walletFilter ? " selected" : ""}>${l}</option>`).join("");
   return head("Wallet", "Your commission, and all customer money held in one pool", `<label class="field"><select id="wlFilter" aria-label="Filter wallet history">${opts}</select></label><button class="btn btn-primary" id="wlTake">Take out my commission</button>`) + `
   <div id="wlAlert"></div>
-  <div id="wlCards" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:14px"></div>
+  <div id="wlCards"><div class="empty">Loading...</div></div>
   <section class="card table-card"><div style="padding:14px 16px;font-weight:700">History</div><div class="tscroll"><table><thead><tr><th>Date</th><th>Wallet</th><th>Type</th><th>Details</th><th>Amount</th></tr></thead>
   <tbody id="mpBody"><tr><td colspan="5"><div class="empty">Loading...</div></td></tr></tbody></table></div></section>`;
 }
@@ -629,12 +634,21 @@ async function mpLoadWallet() {
     if (!$("#mpBody")) return;
     MP.wallet = d.balances;
     const b = d.balances;
-    const card = (l, v, sub) => `<div class="card" style="padding:14px"><small>${l}</small><div style="font-size:22px;font-weight:700;margin:2px 0">${v}</div><small style="opacity:.7">${sub}</small></div>`;
+    const card = (l, v, sub, tone = "", hero = false) => `<div class="wl-card ${tone}${hero ? " hero" : ""}"><span class="wl-l">${l}</span><b class="wl-v">${v}</b><span class="wl-s">${sub}</span></div>`;
+    const sec = (title, hint, cards) => `<section class="wl-sec"><div class="wl-h"><h3>${title}</h3><p>${hint}</p></div><div class="wl-grid">${cards}</div></section>`;
+    const dz = Number(b.delivery_dhaka_orders) || 0, oz = Number(b.delivery_outside_orders) || 0;
     $("#wlCards").innerHTML =
-      card("My commission wallet", money(b.commission), `Earned ${money(b.commission_earned)} · Zento coupons cost ${money(b.coupon_cost)} · Taken out ${money(b.taken_out)}`) +
-      card("Customer money pool", money(b.pool), `Collected ${money(b.collected_total)} · Paid to sellers ${money(b.paid_to_sellers)} · Refunded ${money(b.refunded_to_customers)}`) +
-      card("Owed to sellers", money(b.seller_owed), `Available ${money(b.seller_available)} · Withdrawals waiting ${money(b.pending_withdrawals)}`) +
-      card("Other money in pool", money(b.other), "Delivery fees and sales of your own products");
+      sec("My money", "What actually belongs to Zento", 
+        card("Commission wallet", money(b.commission), `Earned ${money(b.commission_earned)} · Coupons cost ${money(b.coupon_cost)} · Taken out ${money(b.taken_out)}`, "brand", true) +
+        card("Delivery charges", money(b.delivery_total), `Dhaka division: ${dz} orders, ${money(b.delivery_dhaka_fees)}<br>Outside Dhaka: ${oz} orders, ${money(b.delivery_outside_fees)}`, "good") +
+        card("Own product sales", money(b.own_sales), "Products sold by Zento itself (no seller)", "violet") +
+        card("Return charges recovered", money(b.return_recovered), `${Number(b.returned_orders) || 0} returned orders · charged to sellers, not to you`, "warn")) +
+      sec("Customer money", "Everything customers paid for delivered orders", 
+        card("Money pool", money(b.pool), `Collected ${money(b.collected_total)} · Paid to sellers ${money(b.paid_to_sellers)} · Refunded ${money(b.refunded_to_customers)}`, "info", true) +
+        card("Refunds to send", money(b.refunds_due), "Customers waiting for money back (mark each order as refund sent)", Number(b.refunds_due) > 0 ? "bad" : "")) +
+      sec("Sellers", "What you owe sellers, and what sellers owe you", 
+        card("Owed to sellers", money(b.seller_owed), `Available ${money(b.seller_available)} · Withdrawals waiting ${money(b.pending_withdrawals)}`, "info", true) +
+        card("Sellers owe Zento", money(b.sellers_owe_us), "Negative seller balances after returns. New sales of that seller pay it back first.", Number(b.sellers_owe_us) > 0 ? "warn" : ""));
     $("#wlAlert").innerHTML = Number(b.pool) < Number(b.pending_withdrawals)
       ? `<div class="card" style="padding:12px 16px;margin-bottom:12px;border-color:#c62839;color:#c62839">The pool (${money(b.pool)}) is smaller than the withdrawals waiting (${money(b.pending_withdrawals)}). Customer money enters the pool when an order is marked delivered.</div>` : "";
     body.innerHTML = d.transactions.length ? d.transactions.map((t) => `<tr><td>${dshort(t.created_at)}</td>
@@ -898,10 +912,28 @@ function wire() {
   on("#range", "change", (e) => { S.range = Number(e.target.value); renderView(); });
   on("#addProduct", "click", () => productModal());
   on("#retryBtn", "click", loadAll);
+  on("#resetOpen", "click", async () => {
+    try {
+      const d = await api("/api/admin/reset-data");
+      const rows = d.tables.map((t) => `<tr><td>${esc(t.label)}</td><td class="r"><b>${t.count}</b></td></tr>`).join("");
+      showModal(`<div class="modal-h"><h2>Clear test data</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div>
+      <div class="modal-b"><p style="margin-top:0">These will be <b>permanently deleted</b>:</p>
+      <table style="width:100%;margin-bottom:12px"><tbody>${rows}</tbody></table>
+      <p class="sub">Kept: ${d.kept.map(esc).join(", ")}.</p>
+      <label class="full">Type <b>${esc(d.confirm_word)}</b> to confirm<input id="rsWord" autocomplete="off" placeholder="${esc(d.confirm_word)}"></label>
+      <p id="rsErr" style="color:#c62839;min-height:18px;margin:8px 0 0"></p></div>
+      <div class="modal-f"><button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-danger" id="rsGo">Delete everything above</button></div>`);
+      $("#rsGo").addEventListener("click", async () => {
+        try {
+          const r = await api("/api/admin/reset-data", { method: "POST", body: JSON.stringify({ confirm: $("#rsWord").value }) });
+          closeModal(); toast(r.message); loadAll();
+        } catch (e) { $("#rsErr").textContent = e.message; }
+      });
+    } catch (e) { toast(e.message, "error"); }
+  });
   on("#setForm", "submit", (e) => {
     e.preventDefault();
     store.set("zento_store_name", $("#storeName").value.trim());
-    store.set("zento_delivery_charge", $("#deliveryCharge").value);
     store.set("zento_low_stock_threshold", String(Math.max(0, Number($("#lowLimit").value) || 0)));
     store.set("zento_admin_api_key", $("#apiKey").value.trim());
     updateBell(); toast("Settings saved.");
@@ -985,7 +1017,7 @@ function orderModal(o) {
     if (status === "cancelled" || status === "returned") {
       reason = prompt(status === "cancelled" ? "Why is this order cancelled? (shown to the customer)" : "Why is it returned?", "") ;
       if (reason === null) return;
-      if (!confirm(status === "cancelled" ? "Cancel this order? Stock goes back to the shelf." : "Mark as returned? Stock goes back and the seller's money for this order is taken back.")) return;
+      if (!confirm(status === "cancelled" ? "Cancel this order? Stock goes back to the shelf." : "Mark as returned? Stock goes back. The seller's money for this order is taken back and the delivery charge is charged to the SELLER (not to you).")) return;
     }
     run(() => api(`/api/admin/orders/${o.id}/status`, { method: "PUT", body: JSON.stringify({ status, reason }) }), `Order ${oid(o.id)} updated.`);
   });
