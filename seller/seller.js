@@ -1,10 +1,8 @@
 /* ZENTO SELLER CENTER */
 import { supabase } from "/js/supabase.js";
 
-const HOST = location.hostname;
-const API = (HOST === "localhost" || HOST === "127.0.0.1" || HOST.endsWith("onrender.com"))
-  ? location.origin
-  : "https://zento-e-commerce-all.onrender.com";
+// Same server as the store: the seller panel and the seller APK both use these /api/seller/* routes.
+const API = location.origin;
 
 const TOKEN_KEY = "zento_token";
 const USER_KEY = "zento_user";
@@ -298,7 +296,7 @@ function viewOverview() {
   const m = S.me, w = m.wallet, s = m.seller;
   app.innerHTML = `
   <div class="toolbar"><div><h1>${esc(s.store_name)} ${s.is_verified ? '<span class="badge">✔ Verified</span>' : ""}</h1>
-    <span class="muted small">Your public store: <a href="/store/${esc(s.slug)}" target="_blank">${esc(location.origin)}/store/${esc(s.slug)}</a></span></div></div>
+    <span class="muted small">Your public store: ${S.me.store_base_url ? `<a href="${esc(S.me.store_base_url)}/store/${esc(s.slug)}" target="_blank" rel="noopener">${esc(S.me.store_base_url)}/store/${esc(s.slug)}</a>` : `<b>/store/${esc(s.slug)}</b>`}</span></div></div>
   <div class="grid g4">
     <div class="stat hi"><small>Available balance</small><b>${money(w.available)}</b></div>
     <div class="stat"><small>Pending (not delivered)</small><b>${money(w.pending_earnings)}</b></div>
@@ -313,7 +311,8 @@ function viewOverview() {
   ${Number(m.products_missing_cost) > 0 ? `<div class="card warnbox" style="margin-top:14px"><b>${m.products_missing_cost} product(s) have no cost price.</b> Open Products and edit them to add the cost price, so your profit can be calculated.</div>` : ""}
   <div class="card" style="margin-top:14px"><h2>How you get paid</h2>
     <p class="muted" style="margin:0">When an order with your product is marked <b>delivered</b>, Zento keeps ${w.commission_percent}% and the rest is added to your balance. Then request a withdrawal from the Wallet tab.</p>
-    <p class="muted small" style="margin:8px 0 0"><b>Coupons:</b> if you give a discount with your own coupon, you pay that discount. If Zento gives a discount coupon, Zento pays it and you still get your full price.</p></div>`;
+    <p class="muted small" style="margin:8px 0 0"><b>Coupons:</b> if you give a discount with your own coupon, you pay that discount. If Zento gives a discount coupon, Zento pays it and you still get your full price.</p>
+    <p class="muted small" style="margin:8px 0 0"><b>Returns:</b> if a customer returns a delivered order, it is the seller's responsibility. The money you earned is taken back and the delivery charge of that order (৳70 / ৳130) is charged to you. Zento does not carry the cost of returns.${Number(w.returns_charged) > 0 ? ` Return charges so far: <b>${money(w.returns_charged)}</b>.` : ""}</p></div>`;
 }
 
 /* products */
@@ -525,6 +524,7 @@ function viewWallet() {
     <div class="stat"><small>Pending withdrawals</small><b>${money(w.pending_withdrawal)}</b></div>
     <div class="stat"><small>Already paid out</small><b>${money(w.withdrawn)}</b></div>
   </div>
+  ${Number(w.available) < 0 ? `<div class="card warnbox" style="margin-top:14px"><b>Your balance is negative (${money(w.available)}).</b> Returned orders were charged to you. New sales will cover it first; you cannot withdraw until it is positive.</div>` : ""}
   <div class="card" style="margin-top:14px"><h2>Request withdrawal</h2>
     ${hasPayout ? `<p class="muted small" style="margin:0 0 6px">Money will be sent to your ${esc(seller.payout_method)} account <b>${esc(seller.payout_account)}</b>. Minimum ${money(min)}.</p>
     <form id="wf" style="display:flex;gap:10px;flex-wrap:wrap"><input id="wAmt" type="number" min="1" step="0.01" placeholder="Amount" style="flex:1;min-width:140px" required><button class="btn" type="submit">Request</button></form><div class="err" id="wErr"></div>`
@@ -551,7 +551,7 @@ function viewWallet() {
 /* profile */
 function viewProfile() {
   const s = S.me.seller;
-  app.innerHTML = `<div class="toolbar"><h1>Store profile</h1><a class="btn ghost sm" href="/store/${esc(s.slug)}" target="_blank">View my store</a></div>
+  app.innerHTML = `<div class="toolbar"><h1>Store profile</h1>${S.me.store_base_url ? `<a class="btn ghost sm" href="${esc(S.me.store_base_url)}/store/${esc(s.slug)}" target="_blank" rel="noopener">View my store</a>` : ""}</div>
   <form class="card" id="sf">
     <h2>Store page</h2>
     <label>Store name<input id="sName" maxlength="60" value="${esc(s.store_name)}" required></label>
