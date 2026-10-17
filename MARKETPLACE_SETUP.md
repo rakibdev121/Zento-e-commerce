@@ -92,3 +92,20 @@ Delivery fee ager moto original subtotal dhore hoy (discount-er age). Kono SQL l
 
 **Seller password reset**: Seller login-e **Forgot your password?** > email-e ek-bar-er link (30 min).
 **Activity log**: Admin panel > **Activity log** (seller approve, withdrawal, coupon, order status, refund, settings).
+
+## Notun: Delivery charge, Return = seller-er dayitto, Seller app alada, Admin wallet, Go-live
+
+**Delivery charge (area onujayi)**: Dhaka division-er 13 ta jela (Dhaka, Gazipur, Narayanganj, Narsingdi, Munshiganj, Manikganj,
+Tangail, Kishoreganj, Faridpur, Gopalganj, Madaripur, Rajbari, Shariatpur) = **৳70**. Baki shob jela = **৳130**. Free-delivery rule shoriye deya hoyeche.
+Checkout-e customer jela select kore (dropdown). Server nijei fee hishab kore, tai browser theke bodlano jay na.
+
+**Return = seller-er dayitto**: delivered order return hole seller-er income wapas kete neya hoy, **ar oi order-er delivery charge-o seller-er wallet theke kata hoy**
+(`return_charge`). Seller-er balance minus hote pare; minus thakle withdraw kora jay na, notun sale age ta shodh kore. Admin-er commission/pool-e kono lokshan nei.
+
+**Seller app alada**: `seller_app/` folder = alada service (alada URL, alada login `/api/seller/login`). Store-e "Sell on Zento" link nei. Setup: `seller_app/README.md`.
+
+**Admin Wallet**: 3 ta section: *My money* (commission, delivery charge Dhaka/outside bhag kore, own product sales, return charge recovered),
+*Customer money* (pool, refund baki), *Sellers* (seller-ke deya baki, seller-er kache pawna).
+
+**Go live**: Admin > Settings > *Clear test data*. Test order, wallet history, withdrawal, review, chat, activity log muche jay; order number abar #1 theke shuru.
+Product, customer, seller, coupon, admin account thake. Type korte hoy: `DELETE TEST DATA`. Eta undo hoy na, age Supabase/Render DB backup nin.

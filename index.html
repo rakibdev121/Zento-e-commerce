@@ -54,7 +54,7 @@
         <img class="auth-aside-logo" src="assets/zento-logo-full.png" alt="Zento Online Store">
         <h2>Shop smarter with Zento.</h2>
         <ul>
-          <li><svg class="i"><use href="#i-truck"/></svg>Free delivery on orders over ৳100</li>
+          <li><svg class="i"><use href="#i-truck"/></svg>Delivery ৳70 in Dhaka division, ৳130 elsewhere</li>
           <li><svg class="i"><use href="#i-cash"/></svg>Pay with cash on delivery</li>
           <li><svg class="i"><use href="#i-return"/></svg>Easy 7-day returns</li>
         </ul>
@@ -212,7 +212,7 @@
             Shop Now
             <svg class="i"><use href="#i-arrow"/></svg>
           </button>
-          <span class="hero-note">Free delivery over ৳100</span>
+          <span class="hero-note">Delivery from ৳70</span>
         </div>
 
       </div>
@@ -345,7 +345,7 @@
         </div>
 
         <details class="faq"><summary>How long does delivery take?</summary><p>We deliver as fast as possible after your order is approved. You can follow the status of every order in Profile &rarr; My Orders.</p></details>
-        <details class="faq"><summary>What does delivery cost?</summary><p>Delivery is free on orders over &#2547;100. Smaller orders pay a &#2547;5 delivery fee.</p></details>
+        <details class="faq"><summary>What does delivery cost?</summary><p>Delivery costs &#2547;70 anywhere inside Dhaka division and &#2547;130 for the rest of Bangladesh. You see the exact charge at checkout after you pick your district.</p></details>
         <details class="faq"><summary>How can I pay?</summary><p>Choose Cash on Delivery, or pay by bKash / Nagad Send Money and enter your Transaction ID (TrxID) at checkout. Your order is confirmed after we verify the payment.</p></details>
         <details class="faq"><summary>I paid by bKash/Nagad but the order is still pending</summary><p>We check payments manually, so it can take a little time. If it stays pending, contact us with your order number and TrxID.</p></details>
         <details class="faq"><summary>How do I change my address or phone number?</summary><p>Open Profile, update your details and tap Save Changes. For an order that is already placed, contact us as soon as possible.</p></details>
@@ -511,11 +511,11 @@
           </label>
 
           <label>Phone number
-            <input id="checkoutPhone" type="tel" required placeholder="+966 5XXXXXXXX" autocomplete="tel">
+            <input id="checkoutPhone" type="tel" required placeholder="01XXXXXXXXX" autocomplete="tel">
           </label>
 
-          <label>City
-            <input id="checkoutCity" type="text" placeholder="Riyadh" autocomplete="address-level2">
+          <label>District
+            <select id="checkoutCity" required autocomplete="address-level2"></select>
           </label>
 
           <label>Delivery address
@@ -713,11 +713,11 @@
         </label>
 
         <label>Phone
-          <input id="profilePhone" type="tel" required placeholder="+966 5XXXXXXXX" autocomplete="tel">
+          <input id="profilePhone" type="tel" required placeholder="01XXXXXXXXX" autocomplete="tel">
         </label>
 
-        <label>City
-          <input id="profileCity" type="text" placeholder="Riyadh" autocomplete="address-level2">
+        <label>District
+          <select id="profileCity" autocomplete="address-level2"></select>
         </label>
 
         <label>Delivery address
@@ -752,6 +752,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite">Added to cart</div>
 
 
+  <script src="js/delivery.js?v=1"></script>
   <script src="js/dynamic-products.js"></script>
   <script src="js/app.js"></script>
   <script src="js/profile-checkout.js?v=3"></script>
