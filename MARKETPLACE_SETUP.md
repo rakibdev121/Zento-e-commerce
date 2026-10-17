@@ -54,24 +54,41 @@
 4. Seller `/seller/` e **Seller login** diye dhukbe. Prothom login-e nijer notun password dite hobe.
 5. Kono SQL chalate hobe na. Server start holei `seller_applications` table auto toiri hoy.
 
-## Notun: Coupon + Admin Wallet (update)
-**Kono SQL chalate hobe na.** Server start holei notun table (`coupons`, `coupon_redemptions`, `admin_wallet_tx`) auto toiri hoy.
+## Notun: Coupon system (update)
+**Seller coupon** (Seller dashboard > Coupons): shudhu oi seller-er product-e kaj kore. Discount **seller-er nijer**.
+Commission customer jei dam-e kinse (discount-er por) setar upor kata hoy.
+Udahoron: 1000 tk product, 10% seller coupon: customer dey 900, commission 10% = 90, seller pay 810.
 
-### Coupon
-| Ke banabe | Kothay | Discount ke dibe |
-|---|---|---|
-| Seller | Seller dashboard > **Coupons** | **Seller** nijer sale amount theke. Commission ager moto **original price**-er upor kata hoy. |
-| Admin | Admin panel > **Coupons** | **Zento** (admin nijer pocket theke). Seller tar full earning pabe (original price - commission). |
+**Admin coupon** (Admin panel > Coupons): shob product-e kaj kore. Discount **Zento-r pocket theke**.
+Seller port tar full tk-i pay (commission ager moto 1000 tk-er upor). Udahoron: 1000 tk, admin coupon 100 tk: customer dey 900, commission 100, seller pay 900, Zento-r net 100 - 100 = 0.
 
-- Seller coupon shudhu oi seller-er product-e kaj kore. Admin coupon puro cart-e kaj kore.
-- Percent / fixed, max discount, minimum order, total limit, per-customer limit, start/expiry date, pause/resume ache.
-- Customer checkout-e "Coupon code" box-e code diye Apply kore. Server abar check kore, tai browser theke discount badano jay na.
-- Delivery fee ager moto (100 taka-r upor free) coupon-er age-r subtotal diye hisab hoy.
-- Seller coupon-er discount seller-er (100 - commission%)-er beshi hote pare na, jate seller-er earning minus na hoy.
-- Example (sale 150, commission 10%, coupon 30): Seller coupon -> seller pay 105, Zento commission 15. Admin coupon -> seller pay 135, Zento commission 15 - 30 = -15.
+Coupon-e thake: percent/fixed, max discount, minimum order, kotobar use hobe, prottek customer kotobar, start/end date, on/off.
+Delivery fee ager moto original subtotal dhore hoy (discount-er age). Kono SQL lagbe na, server start holei `coupons` table auto toiri hoy.
 
-### Admin Wallet (Admin panel > **Admin Wallet**)
-- **Commission wallet**: order delivered hole commission jama hoy. Admin coupon-er discount ekhan theke minus hoy.
-- **Sellers' money**: sob seller-er earning ekshathe jama hoy. Admin **Withdrawals**-e Approve (paid) korle oi amount ekhan theke minus hoy. Reject korle kichu minus hoy na.
-- Ager (update-er age-r) delivered order ar paid withdrawal gulo prothom boot-e auto wallet-e tule neya hoy.
-- Bhul thakle ba nijer commission tule nile **Save entry** diye manual add/minus kora jay.
+## Notun: Cost price + profit hisab (update)
+- Seller product add/edit-e **Cost price** (je dam-e kine ba banay) dewa **must**. Form-e live dekhay: selling price - Zento commission - cost = profit per unit.
+- Cost price shudhu seller dekhe. Customer-er store/API-te kothao jay na.
+- Order hole cost ager moto "snapshot" hoye order_items-e jay, tai pore cost bodlale purono order-er profit bodlay na.
+- Seller dashboard: Overview-e **Total profit**, Products-e Cost ar Profit/unit, Orders-e prottek order-er Profit (delivered hole real, nahole "estimate").
+- Seller coupon dile profit-e discount-o ghata hoy; Zento coupon dile seller-er profit kome na.
+- Ager product-gulor cost nai: seller-ke "Add cost" dekhabe, edit kore cost dilei profit calculate hobe.
+
+## Notun: Cancel / Return / Refund, Shipping tracking, Email, Password reset, Activity log
+**Cancel & return**
+- Customer: Profile > Orders-e *pending/approved* order-e **Cancel order** button.
+- Admin: Order > Status > **Cancelled** (delivery-r age) ba **Returned** (delivery-r pore). Karon likhte hoy.
+- Cancel/return hole: stock fire ashe, coupon-er use fire ashe, delivered order hole seller-er taka wapas kete ney (wallet-e `sale_refund`).
+- bKash/Nagad-e agei taka dile ba return hole **Refund due** dekhay. Taka pathiye admin order-e **Mark refund sent** chape.
+- Commission/seller wallet-er hisab theke cancelled/returned order bad jay.
+
+**Shipping**
+- Admin order Approve korar por seller **Orders > Mark shipped** diye courier + tracking number dey. Customer order-e tracking dekhe.
+- Order-er shob seller-item shipped hole order nijei *Shipped* hoye jay.
+
+**Email (Resend)** — signup OTP-er moto-i `RESEND_API_KEY` use hoy. Kono notun SQL/key lagbe na.
+- Seller approve hole ID/password email-e jay. Seller-er notun order-e email. Customer-er shipped/delivered/cancelled/refund email.
+- JORURI: `RESEND_FROM_EMAIL` jodi `onboarding@resend.dev` thake, Resend shudhu apnar nijer email-e pathay. Shobar kache pathate Resend-e nijer domain verify kore `RESEND_FROM_EMAIL=orders@yourdomain.com` set korun.
+- Optional: `PUBLIC_BASE_URL=https://your-site.com` (password reset link-er jonno; na dile server nije bujhe nibe).
+
+**Seller password reset**: Seller login-e **Forgot your password?** > email-e ek-bar-er link (30 min).
+**Activity log**: Admin panel > **Activity log** (seller approve, withdrawal, coupon, order status, refund, settings).
