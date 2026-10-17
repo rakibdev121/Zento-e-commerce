@@ -45,6 +45,15 @@ def admin_home():
 def admin_files(filename):
     return send_from_directory(os.path.join(BASE_DIR, "admin"), filename)
 
+@app.route("/seller")
+@app.route("/seller/")
+@app.route("/seller/<path:rest>")
+def old_seller_link(rest=""):
+    """The Seller Center is a separate website now. Old /seller/ links on the store go there."""
+    target = os.environ.get("SELLER_APP_URL", "").strip().rstrip("/")
+    return redirect(target or "/", code=302)
+
+
 @app.route("/<path:filename>")
 def frontend_files(filename):
     if filename.startswith("api/"):
@@ -57,7 +66,7 @@ def frontend_files(filename):
             or any(p.startswith(".") for p in parts)
             or parts[-1].lower().endswith((".py", ".env", ".md", ".txt", ".json", ".lock", ".log"))
             and parts[-1].lower() not in ("robots.txt",)):
-        return send_from_directory(BASE_DIR, "index.html")
+        return redirect("/", code=302)
 
     file_path = os.path.join(BASE_DIR, filename)
 
