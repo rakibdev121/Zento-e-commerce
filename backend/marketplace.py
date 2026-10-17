@@ -345,6 +345,56 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS audit_log_idx ON audit_log (id DESC);
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pool_credited_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS platform_transactions (
+    id BIGSERIAL PRIMARY KEY,
+    wallet TEXT NOT NULL,
+    type TEXT NOT NULL,
+    amount NUMERIC(12,2) NOT NULL,
+    order_id BIGINT,
+    order_item_id BIGINT,
+    withdrawal_id BIGINT,
+    note TEXT DEFAULT '',
+    created_by BIGINT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS platform_tx_idx ON platform_transactions (wallet, id);
+CREATE UNIQUE INDEX IF NOT EXISTS platform_tx_once_item ON platform_transactions (type, order_item_id) WHERE order_item_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS platform_tx_once_order ON platform_transactions (order_id) WHERE type IN ('customer_payment','customer_refund');
+CREATE UNIQUE INDEX IF NOT EXISTS platform_tx_once_wd ON platform_transactions (withdrawal_id) WHERE withdrawal_id IS NOT NULL;
+"""
+
+
+BACKFILL_SQL = """
+INSERT INTO platform_transactions (wallet, type, amount, order_id, order_item_id, note, created_at)
+SELECT 'commission', 'commission', commission_amount, order_id, id,
+       'Commission on order #' || order_id, credited_at
+FROM order_items WHERE credited_at IS NOT NULL AND refunded_at IS NULL AND commission_amount > 0
+ON CONFLICT DO NOTHING;
+
+INSERT INTO platform_transactions (wallet, type, amount, order_id, order_item_id, note, created_at)
+SELECT 'commission', 'coupon_cost', -discount_amount, order_id, id,
+       'Zento coupon discount paid on order #' || order_id, credited_at
+FROM order_items WHERE credited_at IS NOT NULL AND refunded_at IS NULL
+  AND COALESCE(discount_by,'') = 'platform' AND discount_amount > 0
+ON CONFLICT DO NOTHING;
+
+INSERT INTO platform_transactions (wallet, type, amount, order_id, note, created_at)
+SELECT 'pool', 'customer_payment', total, id, 'Customer payment, order #' || id, COALESCE(updated_at, created_at)
+FROM orders WHERE status = 'delivered' AND pool_credited_at IS NULL AND total > 0
+ON CONFLICT DO NOTHING;
+
+UPDATE orders SET pool_credited_at = NOW() WHERE status = 'delivered' AND pool_credited_at IS NULL;
+
+INSERT INTO platform_transactions (wallet, type, amount, withdrawal_id, note, created_at)
+SELECT 'pool', 'seller_payout', -amount, id, 'Seller payout #' || id, COALESCE(processed_at, created_at)
+FROM withdrawals WHERE status = 'approved'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO marketplace_settings (key, value) VALUES ('platform_wallet_backfilled', '1')
+ON CONFLICT DO NOTHING;
 """
 
 
@@ -355,6 +405,10 @@ def ensure_tables():
         cur = conn.cursor()
         cur.execute(SCHEMA_SQL)
         conn.commit()
+        cur.execute("SELECT 1 FROM marketplace_settings WHERE key='platform_wallet_backfilled'")
+        if not cur.fetchone():       # one time: bring earlier delivered orders and payouts into the wallet
+            cur.execute(BACKFILL_SQL)
+            conn.commit()
         READY = True
     except Exception:
         conn.rollback()
@@ -412,6 +466,27 @@ def mp_credit_order(cur, order_id):
             INSERT INTO seller_transactions (seller_id, type, amount, order_id, order_item_id, note)
             VALUES (%s, 'sale', %s, %s, %s, %s)
         """, (seller_id, earning, order_id, item_id, f"{note} ({commission})"))
+        # Admin wallet: your commission, minus the discount you paid with a Zento coupon
+        if commission > 0:
+            cur.execute("""
+                INSERT INTO platform_transactions (wallet, type, amount, order_id, order_item_id, note)
+                VALUES ('commission', 'commission', %s, %s, %s, %s) ON CONFLICT DO NOTHING
+            """, (commission, order_id, item_id, f"Commission on order #{order_id} ({rate}% of {base})"))
+        if funded_by != "seller" and discount > 0:
+            cur.execute("""
+                INSERT INTO platform_transactions (wallet, type, amount, order_id, order_item_id, note)
+                VALUES ('commission', 'coupon_cost', %s, %s, %s, %s) ON CONFLICT DO NOTHING
+            """, (-discount, order_id, item_id, f"Zento coupon discount paid on order #{order_id}"))
+
+    # Admin wallet: everything the customer paid goes into the common pool, once per order
+    cur.execute("UPDATE orders SET pool_credited_at=NOW() WHERE id=%s AND pool_credited_at IS NULL RETURNING total",
+                (order_id,))
+    paid = cur.fetchone()
+    if paid and paid[0] and Decimal(paid[0]) > 0:
+        cur.execute("""
+            INSERT INTO platform_transactions (wallet, type, amount, order_id, note)
+            VALUES ('pool', 'customer_payment', %s, %s, %s) ON CONFLICT DO NOTHING
+        """, (paid[0], order_id, f"Customer payment, order #{order_id}"))
 
 
 def wallet_summary(cur, seller_id):
@@ -971,6 +1046,13 @@ def _process_withdrawal(wid, approve):
             raise ApiError(f"This request is already {w['status']}", 409)
         cur.execute("""UPDATE withdrawals SET status=%s, admin_note=%s, processed_by=%s, processed_at=NOW()
                        WHERE id=%s""", ("approved" if approve else "rejected", note, admin["user_id"], wid))
+        if approve:      # the money leaves the common pool
+            cur.execute("SELECT store_name FROM sellers WHERE id=%s", (w["seller_id"],))
+            srow = cur.fetchone()
+            cur.execute("""INSERT INTO platform_transactions (wallet, type, amount, withdrawal_id, note, created_by)
+                           VALUES ('pool', 'seller_payout', %s, %s, %s, %s) ON CONFLICT DO NOTHING""",
+                        (-w["amount"], wid, f"Paid to seller {srow['store_name'] if srow else ''} (withdrawal #{wid})",
+                         admin["user_id"]))
         if not approve:  # give the held money back to the seller wallet
             cur.execute("""INSERT INTO seller_transactions (seller_id, type, amount, withdrawal_id, note)
                            VALUES (%s,'withdrawal_refund',%s,%s,%s)""",
@@ -1520,6 +1602,72 @@ def admin_coupon_delete(cid):
 
 
 # ---------------------------------------------------------------------
+# ADMIN WALLET: your commission + the common pool of customer money
+# ---------------------------------------------------------------------
+def platform_balances(cur):
+    cur.execute("SELECT wallet, COALESCE(SUM(amount),0) AS v FROM platform_transactions GROUP BY wallet")
+    bal = {r["wallet"]: r["v"] for r in cur.fetchall()}
+    pool, commission = bal.get("pool", Decimal("0")), bal.get("commission", Decimal("0"))
+    cur.execute("SELECT COALESCE(SUM(amount),0) AS v FROM seller_transactions")
+    seller_available = cur.fetchone()["v"]
+    cur.execute("SELECT COALESCE(SUM(amount),0) AS v FROM withdrawals WHERE status='pending'")
+    pending = cur.fetchone()["v"]
+    cur.execute("SELECT type, COALESCE(SUM(amount),0) AS v FROM platform_transactions GROUP BY type")
+    t = {r["type"]: r["v"] for r in cur.fetchall()}
+    owed = seller_available + pending            # part of the pool that belongs to sellers
+    return {
+        "pool": pool, "commission": commission,
+        "seller_owed": owed, "seller_available": seller_available, "pending_withdrawals": pending,
+        "other": pool - owed - commission,       # delivery fees and sales of your own products
+        "collected_total": t.get("customer_payment", 0),
+        "paid_to_sellers": -t.get("seller_payout", 0),
+        "refunded_to_customers": -t.get("customer_refund", 0),
+        "commission_earned": t.get("commission", 0) + t.get("commission_refund", 0),
+        "coupon_cost": -(t.get("coupon_cost", 0) + t.get("coupon_cost_refund", 0)),
+        "taken_out": -t.get("owner_withdrawal", 0) / 2,   # recorded in both wallets
+    }
+
+
+@bp.route("/api/admin/wallet", methods=["GET"])
+@api
+def admin_wallet():
+    admin_required()
+    which = request.args.get("wallet", "").strip().lower()
+    with db() as (conn, cur):
+        data = platform_balances(cur)
+        where, params = "", []
+        if which in ("pool", "commission"):
+            where, params = "WHERE wallet=%s", [which]
+        cur.execute(f"""SELECT id, wallet, type, amount, order_id, withdrawal_id, note, created_at
+                        FROM platform_transactions {where} ORDER BY id DESC LIMIT 200""", params)
+        return ok(balances=data, transactions=cur.fetchall())
+
+
+@bp.route("/api/admin/wallet/commission-withdraw", methods=["POST"])
+@api
+def admin_wallet_commission_withdraw():
+    admin = admin_required()
+    d = request.get_json(silent=True) or {}
+    try:
+        amount = q2(d.get("amount"))
+    except Exception:
+        raise ApiError("Enter the amount")
+    if amount <= 0:
+        raise ApiError("Amount must be more than 0")
+    note = text(d.get("note"), 200) or "Commission taken out by admin"
+    with db() as (conn, cur):
+        cur.execute("SELECT pg_advisory_xact_lock(7771002)")
+        bal = platform_balances(cur)
+        if amount > bal["commission"]:
+            raise ApiError(f"Your commission wallet only has \u09f3{bal['commission']:.2f}")
+        for wallet in ("commission", "pool"):     # the money leaves your wallet and the pool
+            cur.execute("""INSERT INTO platform_transactions (wallet, type, amount, note, created_by)
+                           VALUES (%s,'owner_withdrawal',%s,%s,%s)""", (wallet, -amount, note, admin["user_id"]))
+        audit(cur, admin, "commission_taken", "wallet", None, f"{amount} {note}")
+    return ok(message=f"\u09f3{amount:.2f} taken out of your commission wallet")
+
+
+# ---------------------------------------------------------------------
 # AUDIT LOG
 # ---------------------------------------------------------------------
 def audit(cur, admin, action, target_type="", target_id=None, detail=""):
@@ -1681,9 +1829,20 @@ def mp_reverse_order(cur, order_id, final_status, reason=""):
     if coupon_id:
         c.execute("UPDATE coupons SET used_count = GREATEST(used_count-1,0) WHERE id=%s", (coupon_id,))
 
-    c.execute("""SELECT id, seller_id, seller_earning FROM order_items
+    c.execute("""SELECT id, seller_id, seller_earning, COALESCE(commission_amount,0),
+                        COALESCE(discount_amount,0), COALESCE(discount_by,'')
+                 FROM order_items
                  WHERE order_id=%s AND credited_at IS NOT NULL AND refunded_at IS NULL FOR UPDATE""", (order_id,))
-    for item_id, seller_id, earning in c.fetchall():
+    for item_id, seller_id, earning, comm, disc, disc_by in c.fetchall():
+        # Admin wallet: the commission (and the Zento coupon cost) of this sale is reversed
+        if comm and Decimal(comm) > 0:
+            c.execute("""INSERT INTO platform_transactions (wallet, type, amount, order_id, order_item_id, note)
+                         VALUES ('commission','commission_refund',%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                      (-comm, order_id, item_id, f"Order #{order_id} was {final_status}: commission taken back"))
+        if disc_by == "platform" and disc and Decimal(disc) > 0:
+            c.execute("""INSERT INTO platform_transactions (wallet, type, amount, order_id, order_item_id, note)
+                         VALUES ('commission','coupon_cost_refund',%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                      (disc, order_id, item_id, f"Order #{order_id} was {final_status}: Zento coupon cost given back"))
         c.execute("""INSERT INTO seller_transactions (seller_id, type, amount, order_id, order_item_id, note)
                      VALUES (%s,'sale_refund',%s,%s,%s,%s)""",
                   (seller_id, -earning, order_id, item_id, f"Order #{order_id} was {final_status}: sale taken back"))
@@ -1724,6 +1883,11 @@ def admin_refund_done(oid):
         row = cur.fetchone()
         if not row:
             raise ApiError("No refund is due for this order", 404)
+        cur.execute("SELECT pool_credited_at FROM orders WHERE id=%s", (oid,))
+        if (cur.fetchone() or {}).get("pool_credited_at"):
+            cur.execute("""INSERT INTO platform_transactions (wallet, type, amount, order_id, note, created_by)
+                           VALUES ('pool','customer_refund',%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                        (-row["refund_amount"], oid, f"Refund sent to customer, order #{oid}", admin["user_id"]))
         audit(cur, admin, "refund_sent", "order", oid, f"{row['refund_amount']} {text(d.get('note'), 150)}")
     if email_enabled():
         def run():
