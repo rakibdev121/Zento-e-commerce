@@ -102,7 +102,7 @@ Checkout-e customer jela select kore (dropdown). Server nijei fee hishab kore, t
 **Return = seller-er dayitto**: delivered order return hole seller-er income wapas kete neya hoy, **ar oi order-er delivery charge-o seller-er wallet theke kata hoy**
 (`return_charge`). Seller-er balance minus hote pare; minus thakle withdraw kora jay na, notun sale age ta shodh kore. Admin-er commission/pool-e kono lokshan nei.
 
-**Seller app alada**: `seller_app/` folder = alada service (alada URL, alada login `/api/seller/login`). Store-e "Sell on Zento" link nei. Setup: `seller_app/README.md`.
+**Seller panel / APK**: ager moto same server-e: `/seller/` (web panel) ar `/api/seller/*` + `/api/login` (APK). Store-er website-e kono "Sell on Zento" / seller link nei.
 
 **Admin Wallet**: 3 ta section: *My money* (commission, delivery charge Dhaka/outside bhag kore, own product sales, return charge recovered),
 *Customer money* (pool, refund baki), *Sellers* (seller-ke deya baki, seller-er kache pawna).
