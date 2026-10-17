@@ -168,8 +168,8 @@ const dshort = (s) => { const d = pdate(s); return isNaN(d) ? "-" : `${MON[d.get
 const oid = (id) => "#ZT-" + String(id).padStart(4, "0");
 const sod = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime(); };
 const statusLabel = (s) => ({ out_for_delivery: "Out for delivery" }[s] || String(s || "pending").replace(/^./, (c) => c.toUpperCase()));
-const pillFor = (s) => ({ delivered: "good", approved: "info", processing: "info", shipped: "violet", out_for_delivery: "violet", pending: "warn" }[s] || "info");
-const STATUSES = ["pending", "approved", "processing", "shipped", "out_for_delivery", "delivered"];
+const pillFor = (s) => ({ delivered: "good", approved: "info", processing: "info", shipped: "violet", out_for_delivery: "violet", pending: "warn", cancelled: "bad", returned: "bad" }[s] || "info");
+const STATUSES = ["pending", "approved", "processing", "shipped", "out_for_delivery", "delivered", "cancelled", "returned"];
 
 function inWindow(days, back = 0) {
   const end = sod(Date.now()) + DAY - back * days * DAY, start = end - days * DAY;
@@ -515,6 +515,100 @@ function mpAppAction(id, act, store) {
   }
 }
 
+/* ---------- Coupons (admin coupons are paid by Zento; seller coupons by the seller) ---------- */
+const cpDate = (v) => { if (!v) return ""; const d = new Date(v); return isNaN(d) ? "" : d.toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" }); };
+const cpValue = (c) => c.discount_type === "percent" ? `${Number(c.value)}%${c.max_discount != null ? ` (max ${money(c.max_discount)})` : ""}` : money(c.value);
+const cpState = (c) => {
+  const now = Date.now();
+  if (!c.active) return ["Off", "bad"];
+  if (c.expires_at && new Date(c.expires_at) < now) return ["Expired", "bad"];
+  if (c.starts_at && new Date(c.starts_at) > now) return ["Scheduled", "warn"];
+  if (c.usage_limit != null && c.used_count >= c.usage_limit) return ["Fully used", "warn"];
+  return ["Live", "good"];
+};
+function vCoupons() {
+  return head("Coupons", "Admin coupons are paid by Zento. Sellers still get their full price.", `<button class="btn btn-primary" id="cpNew">+ New coupon</button>`) + `
+  <section class="card table-card"><div class="tscroll"><table><thead><tr><th>Code</th><th>Discount</th><th>Paid by</th><th>Used</th><th>Discount given</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody id="mpBody"><tr><td colspan="7"><div class="empty">Loading...</div></td></tr></tbody></table></div></section>`;
+}
+async function mpLoadCoupons() {
+  const body = $("#mpBody"); if (!body) return;
+  try {
+    const d = await api("/api/admin/coupons");
+    if (!$("#mpBody")) return;
+    MP.coupons = d.coupons;
+    body.innerHTML = d.coupons.length ? d.coupons.map((c) => {
+      const [st, cls] = cpState(c);
+      const mine = c.seller_id == null;
+      return `<tr><td><b>${esc(c.code)}</b>${Number(c.min_order) > 0 ? `<br><small>Min order ${money(c.min_order)}</small>` : ""}
+        <br><small>${c.starts_at ? "From " + cpDate(c.starts_at) + " " : ""}${c.expires_at ? "Until " + cpDate(c.expires_at) : "No expiry"}</small></td>
+        <td>${esc(cpValue(c))}</td>
+        <td>${mine ? '<span class="pill info">Zento</span>' : `<span class="pill warn">Seller</span><br><small>${esc(c.store_name || "")}</small>`}</td>
+        <td>${c.used_count}${c.usage_limit != null ? " / " + c.usage_limit : ""}<br><small>${c.per_user_limit} per customer</small></td>
+        <td>${money(c.discount_given)}</td>
+        <td><span class="pill ${cls}">${st}</span></td>
+        <td style="white-space:nowrap">${mine ? `<button class="btn btn-sm btn-ghost" data-cact="edit" data-cid="${c.id}">Edit</button> ` : ""}
+          <button class="btn btn-sm btn-ghost" data-cact="${c.active ? "off" : "on"}" data-cid="${c.id}">${c.active ? "Turn off" : "Turn on"}</button>
+          <button class="btn btn-sm btn-ghost" data-cact="del" data-cid="${c.id}">Delete</button></td></tr>`;
+    }).join("") : `<tr><td colspan="7"><div class="empty">No coupons yet. Tap "+ New coupon".</div></td></tr>`;
+  } catch (e) { body.innerHTML = `<tr><td colspan="7"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+function mpCouponForm(c) {
+  const v = c || { discount_type: "percent", per_user_limit: 1, active: true };
+  showModal(`<div class="modal-h"><h2>${c ? "Edit coupon" : "New coupon (paid by Zento)"}</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div>
+  <div class="modal-b"><div class="form">
+    <label class="full">Coupon code<input id="cpCode" maxlength="40" value="${esc(v.code || "")}" placeholder="EID20" style="text-transform:uppercase"></label>
+    <label>Type<select id="cpType"><option value="percent"${v.discount_type === "percent" ? " selected" : ""}>Percent (%)</option><option value="fixed"${v.discount_type === "fixed" ? " selected" : ""}>Fixed amount (BDT)</option></select></label>
+    <label>Value<input id="cpValue" type="number" min="0" step="0.01" value="${v.value ?? ""}"></label>
+    <label>Max discount (BDT, percent only)<input id="cpMax" type="number" min="0" step="0.01" value="${v.max_discount ?? ""}" placeholder="optional"></label>
+    <label>Minimum order (BDT)<input id="cpMin" type="number" min="0" step="0.01" value="${Number(v.min_order) || ""}" placeholder="0"></label>
+    <label>Total uses allowed<input id="cpLimit" type="number" min="0" step="1" value="${v.usage_limit ?? ""}" placeholder="unlimited"></label>
+    <label>Uses per customer<input id="cpPer" type="number" min="1" step="1" value="${v.per_user_limit ?? 1}"></label>
+    <label>Starts on<input id="cpStart" type="date" value="${cpDate(v.starts_at)}"></label>
+    <label>Ends on<input id="cpEnd" type="date" value="${cpDate(v.expires_at)}"></label>
+  </div><p id="cpErr" class="muted" style="color:#c62839;min-height:18px"></p></div>
+  <div class="modal-f"><button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" id="cpSave">${c ? "Save" : "Create coupon"}</button></div>`);
+  $("#cpSave").addEventListener("click", async () => {
+    const body = { code: $("#cpCode").value, discount_type: $("#cpType").value, value: $("#cpValue").value, max_discount: $("#cpMax").value,
+      min_order: $("#cpMin").value, usage_limit: $("#cpLimit").value, per_user_limit: $("#cpPer").value,
+      starts_at: $("#cpStart").value, expires_at: $("#cpEnd").value, active: c ? c.active : true };
+    try {
+      const r = await api(c ? `/api/admin/coupons/${c.id}` : "/api/admin/coupons", { method: c ? "PUT" : "POST", body: JSON.stringify(body) });
+      closeModal(); toast(r.message); mpLoadCoupons();
+    } catch (e) { $("#cpErr").textContent = e.message; }
+  });
+}
+async function mpCouponAction(id, act) {
+  const c = (MP.coupons || []).find((x) => String(x.id) === String(id));
+  try {
+    if (act === "edit") return mpCouponForm(c);
+    if (act === "on" || act === "off") { const r = await api(`/api/admin/coupons/${id}`, { method: "PUT", body: JSON.stringify({ active: act === "on" }) }); toast(r.message); }
+    if (act === "del") { if (!confirm("Delete this coupon?")) return; const r = await api(`/api/admin/coupons/${id}`, { method: "DELETE" }); toast(r.message); }
+    mpLoadCoupons();
+  } catch (e) { toast(e.message, "error"); }
+}
+
+/* ---------- Activity log (who did what) ---------- */
+const auLabel = { seller_application_approved: "Approved seller application", seller_application_rejected: "Rejected seller application", seller_status: "Changed seller status",
+  withdrawal_approved: "Paid a withdrawal", withdrawal_rejected: "Rejected a withdrawal", marketplace_settings: "Changed marketplace settings",
+  coupon_created: "Created coupon", coupon_updated: "Changed coupon", coupon_deleted: "Deleted coupon", review_removed: "Removed a review",
+  order_status: "Changed order status", refund_sent: "Marked refund as sent" };
+function vAudit() {
+  return head("Activity log", "Every important admin action, with who did it and when") + `
+  <section class="card table-card"><div class="tscroll"><table><thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Details</th></tr></thead>
+  <tbody id="mpBody"><tr><td colspan="4"><div class="empty">Loading...</div></td></tr></tbody></table></div></section>`;
+}
+async function mpLoadAudit() {
+  const body = $("#mpBody"); if (!body) return;
+  try {
+    const d = await api("/api/admin/audit");
+    if (!$("#mpBody")) return;
+    body.innerHTML = d.entries.length ? d.entries.map((e) => `<tr><td>${dshort(e.created_at)}</td><td>${esc(e.admin_email || "-")}</td>
+      <td>${esc(auLabel[e.action] || e.action)}</td><td>${e.target_type ? `<small>${esc(e.target_type)} ${esc(e.target_id)}</small> ` : ""}${esc(e.detail || "")}</td></tr>`).join("")
+      : `<tr><td colspan="4"><div class="empty">Nothing recorded yet.</div></td></tr>`;
+  } catch (e) { body.innerHTML = `<tr><td colspan="4"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+
 function vWithdrawals() {
   const opts = [["pending", "Pending"], ["approved", "Paid"], ["rejected", "Rejected"], ["", "All"]]
     .map(([v, l]) => `<option value="${v}"${v === MP.wdFilter ? " selected" : ""}>${l}</option>`).join("");
@@ -556,7 +650,6 @@ async function mpLoadMarket() {
       ${st("Commission earned", money(d.commission_earned))}${st("Seller sales (delivered)", money(d.seller_sales))}
       ${st("Pending sellers", sc.pending || 0)}${st("Approved sellers", sc.approved || 0)}
       ${st("Withdrawals waiting", (wd.pending?.count || 0) + " · " + money(wd.pending?.amount))}${st("Total paid out", money(wd.approved?.amount))}
-      ${st("Zento coupon cost", money(d.platform_coupon_cost))}
     </div>
     <section class="card"><form class="form" id="mpSet" style="padding:16px">
       <label>Platform commission (%)<input id="mpComm" type="number" min="0" max="90" step="0.5" value="${esc(d.settings.commission_percent)}"></label>
@@ -580,9 +673,9 @@ async function mpLoadMarket() {
 }
 
 function mpWire(k) {
-  if (k === "coupons") cpLoad();
-  if (k === "wallet") { wlLoad(); const f = $("#wlFilter"); if (f) f.addEventListener("change", (e) => { MP.walletBucket = e.target.value; wlLoad(); }); }
-  if (!["sellers", "withdrawals", "marketplace", "applications"].includes(k)) return;
+  if (!["sellers", "withdrawals", "marketplace", "applications", "coupons", "audit"].includes(k)) return;
+  if (k === "audit") mpLoadAudit();
+  if (k === "coupons") { mpLoadCoupons(); const b = $("#cpNew"); if (b) b.addEventListener("click", () => mpCouponForm()); }
   if (k === "applications") { mpLoadApps(); const f = $("#mpAppFilter"); if (f) f.addEventListener("change", (e) => { MP.appFilter = e.target.value; mpLoadApps(); }); }
   if (k === "sellers") { mpLoadSellers(); const f = $("#mpSellerFilter"); if (f) f.addEventListener("change", (e) => { MP.sellerFilter = e.target.value; mpLoadSellers(); }); }
   if (k === "withdrawals") { mpLoadWithdrawals(); const f = $("#mpWdFilter"); if (f) f.addEventListener("change", (e) => { MP.wdFilter = e.target.value; mpLoadWithdrawals(); }); }
@@ -590,121 +683,13 @@ function mpWire(k) {
 }
 /* one delegated listener for all marketplace buttons (registered once) */
 document.addEventListener("click", (e) => {
-  if (e.target.closest("[data-cnew]")) return cpNew();
-  const cp = e.target.closest("[data-cact]");
-  if (cp) {
-    const id = cp.dataset.cid;
-    if (cp.dataset.cact === "delete") { if (!confirm("Delete this coupon?")) return; return api(`/api/admin/coupons/${id}`, { method: "DELETE" }).then((r) => { toast(r.message); cpLoad(); }).catch((err) => toast(err.message, "error")); }
-    return api(`/api/admin/coupons/${id}`, { method: "PUT", body: JSON.stringify({ is_active: cp.dataset.on !== "1" }) }).then((r) => { toast(r.message); cpLoad(); }).catch((err) => toast(err.message, "error"));
-  }
+  const cp = e.target.closest("[data-cact]"); if (cp) return mpCouponAction(cp.dataset.cid, cp.dataset.cact);
   const ap = e.target.closest("[data-aact]"); if (ap) return mpAppAction(ap.dataset.aid, ap.dataset.aact, ap.dataset.astore);
   const s = e.target.closest("[data-sact]"); if (s) return mpSellerAction(s.dataset.sid, s.dataset.sact);
   const w = e.target.closest("[data-wact]"); if (w) return mpWithdrawalAction(w.dataset.wid, w.dataset.wact, w.dataset.amt);
   const r = e.target.closest("[data-rdel]");
   if (r && confirm("Remove this review?")) api(`/api/admin/reviews/${r.dataset.rdel}`, { method: "DELETE" }).then(() => { toast("Review removed"); mpLoadMarket(); }).catch((err) => toast(err.message, "error"));
 });
-
-/* ---------- COUPONS + ADMIN WALLET ---------- */
-Object.assign(I, {
-  tag: '<path d="M3 12V4h8l9 9-8 8z"/><circle cx="7.5" cy="8.5" r="1.3"/>'
-});
-MP.walletBucket = "";
-const cpDate = (v) => (v ? dshort(v) : "-");
-
-function vCoupons() {
-  return head("Coupons", "Zento coupons are paid by Zento. Seller coupons are paid by the seller.",
-    `<button class="btn btn-primary" data-cnew>${ico("plus")}New coupon</button>`) + `
-  <section class="card table-card"><div class="tscroll"><table><thead><tr><th>Code</th><th>Discount</th><th>Paid by</th><th>Min order</th><th>Used</th><th>Total given</th><th>Valid</th><th>Status</th><th></th></tr></thead>
-  <tbody id="cpBody"><tr><td colspan="9"><div class="empty">Loading...</div></td></tr></tbody></table></div></section>`;
-}
-async function cpLoad() {
-  const body = $("#cpBody"); if (!body) return;
-  try {
-    const d = await api("/api/admin/coupons");
-    if (!$("#cpBody")) return;
-    body.innerHTML = d.coupons.length ? d.coupons.map((c) => {
-      const val = c.discount_type === "percent" ? `${Number(c.discount_value)}%${c.max_discount ? `<br><small>max ${money(c.max_discount)}</small>` : ""}` : money(c.discount_value);
-      const expired = c.expires_at && new Date(c.expires_at) < new Date();
-      const state = !c.is_active ? ["Paused", "warn"] : expired ? ["Expired", "bad"] : ["Active", "good"];
-      return `<tr><td><b>${esc(c.code)}</b></td><td>${val}</td>
-        <td>${c.seller_id ? `${esc(c.store_name || "Seller")}<br><small>seller pays</small>` : "<b>Zento</b><br><small>admin pays</small>"}</td>
-        <td>${Number(c.min_order) ? money(c.min_order) : "-"}</td>
-        <td>${c.used_count}${c.usage_limit ? " / " + c.usage_limit : ""}<br><small>${c.per_user_limit} per customer</small></td>
-        <td>${money(c.total_discount)}</td><td><small>${cpDate(c.starts_at)} to ${cpDate(c.expires_at)}</small></td>
-        <td><span class="pill ${state[1]}">${state[0]}</span></td>
-        <td style="white-space:nowrap"><button class="btn btn-sm btn-ghost" data-cact="toggle" data-cid="${c.id}" data-on="${c.is_active ? 1 : 0}">${c.is_active ? "Pause" : "Resume"}</button>
-        <button class="btn btn-sm btn-ghost" data-cact="delete" data-cid="${c.id}">Delete</button></td></tr>`;
-    }).join("") : `<tr><td colspan="9"><div class="empty">No coupons yet. Press "New coupon".</div></td></tr>`;
-  } catch (e) { body.innerHTML = `<tr><td colspan="9"><div class="empty">${esc(e.message)}</div></td></tr>`; }
-}
-function cpNew() {
-  showModal(`<div class="modal-h"><h2>New Zento coupon</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div>
-  <div class="modal-b"><div class="form">
-    <label>Coupon code<input id="cpCode" maxlength="30" placeholder="EID100" autocomplete="off"></label>
-    <label>Type<select id="cpType"><option value="percent">Percent (%)</option><option value="fixed">Fixed amount (৳)</option></select></label>
-    <label>Discount value<input id="cpVal" type="number" min="1" step="0.01"></label>
-    <label>Max discount (৳, percent only)<input id="cpMax" type="number" min="0" step="1" placeholder="optional"></label>
-    <label>Minimum order (৳)<input id="cpMin" type="number" min="0" step="1" placeholder="0"></label>
-    <label>Total usage limit<input id="cpLimit" type="number" min="1" step="1" placeholder="unlimited"></label>
-    <label>Uses per customer<input id="cpPer" type="number" min="1" step="1" value="1"></label>
-    <label>Start date<input id="cpStart" type="date"></label>
-    <label>Expiry date<input id="cpEnd" type="date"></label>
-    <p class="full"><small>Zento pays this discount from the commission wallet. Sellers still receive their full amount.</small></p>
-  </div></div>
-  <div class="modal-f"><button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" id="cpSave">Create coupon</button></div>`);
-  $("#cpSave").addEventListener("click", async () => {
-    const body = { code: $("#cpCode").value, discount_type: $("#cpType").value, discount_value: $("#cpVal").value, max_discount: $("#cpMax").value,
-      min_order: $("#cpMin").value, usage_limit: $("#cpLimit").value, per_user_limit: $("#cpPer").value, starts_at: $("#cpStart").value, expires_at: $("#cpEnd").value };
-    try { const r = await api("/api/admin/coupons", { method: "POST", body: JSON.stringify(body) }); closeModal(); toast(r.message); cpLoad(); }
-    catch (e) { toast(e.message, "error"); }
-  });
-}
-
-function vWallet() {
-  const opts = [["", "All"], ["commission", "Commission wallet"], ["seller_funds", "Sellers' money"]]
-    .map(([v, l]) => `<option value="${v}"${v === MP.walletBucket ? " selected" : ""}>${l}</option>`).join("");
-  return head("Admin Wallet", "Your commission and all sellers' money in one place", `<label class="field"><select id="wlFilter" aria-label="Filter wallet">${opts}</select></label>`)
-    + `<div id="wlBody"><section class="card"><div class="empty">Loading...</div></section></div>`;
-}
-async function wlLoad() {
-  const box = $("#wlBody"); if (!box) return;
-  try {
-    const d = await api("/api/admin/wallet" + (MP.walletBucket ? `?bucket=${MP.walletBucket}` : ""));
-    if (!$("#wlBody")) return;
-    const big = (l, v, sub, color) => `<div class="card" style="padding:16px"><small>${l}</small><div style="font-size:24px;font-weight:800;${color ? `color:${color}` : ""}">${money(v)}</div><small>${sub}</small></div>`;
-    const mini = (l, v) => `<div class="card" style="padding:12px"><small>${l}</small><div style="font-size:16px;font-weight:700">${money(v)}</div></div>`;
-    const typeName = { commission: "Commission", seller_funds: "Seller money in", withdrawal: "Withdrawal paid", coupon_cost: "Zento coupon cost", manual: "Manual entry" };
-    box.innerHTML = `
-    <div style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:12px">
-      ${big("Commission wallet (yours)", d.commission_balance, "Commission minus Zento coupon cost", "#16a34a")}
-      ${big("Sellers' money (held)", d.seller_funds_balance, "All sellers together. Goes down when a withdrawal is approved.")}
-      ${big("Total in wallet", d.total_balance, "Both wallets together")}
-    </div>
-    <div style="display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:14px">
-      ${mini("Commission earned", d.commission_earned)}${mini("Zento coupon cost", d.coupon_cost)}${mini("Paid to sellers", d.total_paid_out)}
-      ${mini("Seller wallets total", d.sellers_wallets_total)}${mini("Withdrawals waiting", d.withdrawals_pending)}
-    </div>
-    <section class="card"><form class="form" id="wlForm" style="padding:16px">
-      <label>Wallet<select id="wlBucket"><option value="commission">Commission wallet</option><option value="seller_funds">Sellers' money</option></select></label>
-      <label>Action<select id="wlDir"><option value="add">Add money</option><option value="remove">Take money out</option></select></label>
-      <label>Amount (৳)<input id="wlAmt" type="number" min="1" step="0.01" required></label>
-      <label>Note<input id="wlNote" maxlength="200" placeholder="e.g. I took my commission out"></label>
-      <div class="full"><button class="btn btn-primary" type="submit">Save entry</button> <small>Use this only for corrections. Orders and withdrawals update the wallet by themselves.</small></div>
-    </form></section>
-    <section class="card table-card" style="margin-top:14px"><div class="tscroll"><table><thead><tr><th>Date</th><th>Wallet</th><th>Type</th><th>Seller</th><th>Note</th><th>Amount</th></tr></thead><tbody>
-    ${d.transactions.length ? d.transactions.map((t) => `<tr><td>${dstr(t.created_at)}</td><td>${t.bucket === "commission" ? "Commission" : "Sellers' money"}</td><td>${typeName[t.type] || esc(t.type)}</td>
-      <td>${esc(t.store_name || "-")}</td><td><small>${esc(t.note)}</small></td>
-      <td style="font-weight:700;color:${Number(t.amount) < 0 ? "#dc2626" : "#16a34a"}">${Number(t.amount) < 0 ? "-" : "+"}${money(Math.abs(t.amount))}</td></tr>`).join("") : `<tr><td colspan="6"><div class="empty">No wallet activity yet. It starts when an order is delivered.</div></td></tr>`}
-    </tbody></table></div></section>`;
-    $("#wlForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      try {
-        const r = await api("/api/admin/wallet/entry", { method: "POST", body: JSON.stringify({ bucket: $("#wlBucket").value, direction: $("#wlDir").value, amount: $("#wlAmt").value, note: $("#wlNote").value }) });
-        toast(r.message); wlLoad();
-      } catch (err) { toast(err.message, "error"); }
-    });
-  } catch (e) { box.innerHTML = `<section class="card"><div class="empty">${esc(e.message)}</div></section>`; }
-}
 
 const ROUTES = {
   dashboard: { t: "Dashboard", i: "dashboard", v: vDashboard },
@@ -720,11 +705,11 @@ const ROUTES = {
   applications: { t: "Seller Applications", i: "sellers", v: vApplications },
   sellers: { t: "Sellers", i: "sellers", v: vSellers },
   withdrawals: { t: "Withdrawals", i: "wallet", v: vWithdrawals },
-  marketplace: { t: "Marketplace", i: "star", v: vMarket },
-  wallet: { t: "Admin Wallet", i: "wallet", v: vWallet },
-  coupons: { t: "Coupons", i: "tag", v: vCoupons }
+  audit: { t: "Activity log", i: "analytics", v: vAudit },
+  coupons: { t: "Coupons", i: "star", v: vCoupons },
+  marketplace: { t: "Marketplace", i: "star", v: vMarket }
 };
-const MAIN = ["dashboard", "products", "orders", "messages", "customers", "applications", "sellers", "withdrawals", "wallet", "coupons", "marketplace", "analytics"];
+const MAIN = ["dashboard", "products", "orders", "messages", "customers", "applications", "sellers", "withdrawals", "coupons", "marketplace", "audit", "analytics"];
 const REPORTS = ["lowstock", "recent", "revenue"];
 const curRoute = () => { const k = (location.hash || "#dashboard").slice(1); return ROUTES[k] ? k : "dashboard"; };
 
@@ -933,15 +918,25 @@ function orderModal(o) {
     <dt>Customer</dt><dd>${esc(o.customer_name)}</dd><dt>Phone</dt><dd>${esc(o.phone || "-")}</dd>
     <dt>Address</dt><dd>${esc(o.address || "-")}${o.city ? ", " + esc(o.city) : ""}</dd>
     <dt>Placed</dt><dd>${dstr(o.created_at)}</dd><dt>Payment</dt><dd>${esc(String(o.payment_method || "cod").toUpperCase())}</dd>${o.payment_trx_id ? `<dt>TrxID</dt><dd><b>${esc(o.payment_trx_id)}</b></dd><dt>Paid from</dt><dd>${esc(o.payment_sender || "-")}</dd>` : ""}
-    <dt>Items</dt><dd class="items">${items.length ? items.map((it) => `<div><span>${esc(it.name || it.product_name)} × ${it.quantity}</span><span>${money(it.subtotal)}</span></div>`).join("") : "-"}</dd>
-    <dt>Subtotal</dt><dd>${money(o.subtotal)}</dd><dt>Delivery</dt><dd>${money(o.delivery_fee)}</dd>${Number(o.discount_amount) > 0 ? `<dt>Coupon ${esc(o.coupon_code)}</dt><dd>-${money(o.discount_amount)} <small>(${o.coupon_by === "seller" ? "seller pays" : "Zento pays"})</small></dd>` : ""}<dt>Total</dt><dd><b>${money(o.total)}</b></dd>
-    <dt>Status</dt><dd class="status-row"><select class="sel" id="stSel" aria-label="Order status">${opts}</select><button class="btn btn-sm btn-primary" id="stSave">Update</button>${o.status === "pending" ? '<button class="btn btn-sm btn-soft" id="stApprove">Approve</button>' : ""}</dd>
+    <dt>Items</dt><dd class="items">${items.length ? items.map((it) => `<div><span>${esc(it.name || it.product_name)} × ${it.quantity}${it.tracking_no ? `<br><small>${esc(it.courier)} · ${esc(it.tracking_no)}</small>` : ""}</span><span>${money(it.subtotal)}</span></div>`).join("") : "-"}</dd>
+    <dt>Subtotal</dt><dd>${money(o.subtotal)}</dd>${Number(o.discount_total) > 0 ? `<dt>Coupon ${esc(o.coupon_code)}</dt><dd>-${money(o.discount_total)}</dd>` : ""}<dt>Delivery</dt><dd>${money(o.delivery_fee)}</dd><dt>Total</dt><dd><b>${money(o.total)}</b></dd>
+    ${o.cancel_reason && (o.status === "cancelled" || o.status === "returned") ? `<dt>Reason</dt><dd>${esc(o.cancel_reason)}</dd>` : ""}${o.refund_status === "due" ? `<dt>Refund</dt><dd><b style="color:#c62839">Refund due ${money(o.refund_amount)}</b> <button class="btn btn-sm btn-primary" id="refundDone">Mark refund sent</button></dd>` : o.refund_status === "refunded" ? `<dt>Refund</dt><dd>Sent ${money(o.refund_amount)}</dd>` : ""}<dt>Status</dt><dd class="status-row"><select class="sel" id="stSel" aria-label="Order status">${opts}</select><button class="btn btn-sm btn-primary" id="stSave">Update</button>${o.status === "pending" ? '<button class="btn btn-sm btn-soft" id="stApprove">Approve</button>' : ""}</dd>
   </dl><div class="modal-f"><button class="btn btn-ghost" data-close>Close</button></div>`);
   const run = async (fn, msg) => {
     try { await fn(); await reloadOrders(); closeModal(); renderView(); toast(msg); }
     catch (e) { toast(e.message || "Request failed.", "error"); }
   };
-  $("#stSave").addEventListener("click", () => run(() => api(`/api/admin/orders/${o.id}/status`, { method: "PUT", body: JSON.stringify({ status: $("#stSel").value }) }), `Order ${oid(o.id)} updated.`));
+  $("#stSave").addEventListener("click", () => {
+    const status = $("#stSel").value;
+    let reason = "";
+    if (status === "cancelled" || status === "returned") {
+      reason = prompt(status === "cancelled" ? "Why is this order cancelled? (shown to the customer)" : "Why is it returned?", "") ;
+      if (reason === null) return;
+      if (!confirm(status === "cancelled" ? "Cancel this order? Stock goes back to the shelf." : "Mark as returned? Stock goes back and the seller's money for this order is taken back.")) return;
+    }
+    run(() => api(`/api/admin/orders/${o.id}/status`, { method: "PUT", body: JSON.stringify({ status, reason }) }), `Order ${oid(o.id)} updated.`);
+  });
+  const rd = $("#refundDone"); if (rd) rd.addEventListener("click", () => run(() => api(`/api/admin/orders/${o.id}/refund-done`, { method: "POST", body: JSON.stringify({}) }), "Refund marked as sent."));
   const ap = $("#stApprove"); if (ap) ap.addEventListener("click", () => run(() => api(`/api/admin/orders/${o.id}/approve`, { method: "POST" }), `Order ${oid(o.id)} approved.`));
 }
 
