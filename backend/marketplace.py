@@ -35,7 +35,8 @@ from flask import Blueprint, request, send_from_directory, abort
 from werkzeug.security import generate_password_hash, check_password_hash
 
 log = logging.getLogger("zento.marketplace")
-bp = Blueprint("marketplace", __name__)
+bp = Blueprint("marketplace", __name__)             # customer site + admin panel
+seller_bp = Blueprint("seller_portal", __name__)    # Seller Center: runs as its OWN service (seller_app/)
 _H = {}  # helpers injected from app.py
 
 DEFAULT_SETTINGS = {
@@ -502,9 +503,12 @@ def wallet_summary(cur, seller_id):
                      AND order_id NOT IN (SELECT id FROM orders WHERE status IN ('cancelled','returned'))""", (seller_id,))
     pending_gross = cur.fetchone()["v"]
     pending_earnings = q2(Decimal(pending_gross) * (100 - rate) / 100)
+    cur.execute("SELECT COALESCE(SUM(-amount),0) AS v FROM seller_transactions WHERE seller_id=%s AND type='return_charge'", (seller_id,))
+    returns_charged = cur.fetchone()["v"]
     cur.execute("SELECT status, COALESCE(SUM(amount),0) AS v FROM withdrawals WHERE seller_id=%s GROUP BY status", (seller_id,))
     w = {r["status"]: r["v"] for r in cur.fetchall()}
     return {
+        "returns_charged": returns_charged,
         "available": available, "pending_earnings": pending_earnings,
         "total_earned": total_earned, "commission_paid": commission_paid,
         "withdrawn": w.get("approved", 0), "pending_withdrawal": w.get("pending", 0),
@@ -515,7 +519,7 @@ def wallet_summary(cur, seller_id):
 # ---------------------------------------------------------------------
 # SELLER: apply, profile
 # ---------------------------------------------------------------------
-@bp.route("/api/seller/apply", methods=["POST"])
+@seller_bp.route("/api/seller/apply", methods=["POST"])
 @api
 def seller_apply():
     u = current_user()
@@ -548,7 +552,7 @@ def seller_apply():
     return ok(message="Application submitted. Admin will review it soon.", seller_status="pending")
 
 
-@bp.route("/api/seller/me", methods=["GET"])
+@seller_bp.route("/api/seller/me", methods=["GET"])
 @api
 def seller_me():
     current_user()
@@ -560,7 +564,8 @@ def seller_me():
             return ok(seller=None)
         out = dict(s)
         out.pop("user_id", None)
-        data = {"seller": out, "login_id": u.get("email", "")}
+        data = {"seller": out, "login_id": u.get("email", ""),
+                "store_base_url": os.environ.get("STORE_PUBLIC_URL", "").rstrip("/")}
         if s["status"] == "approved":
             data["wallet"] = wallet_summary(cur, s["id"])
             cur.execute("SELECT COUNT(*) AS n FROM products WHERE seller_id=%s", (s["id"],))
@@ -587,7 +592,7 @@ def seller_me():
         return ok(**data)
 
 
-@bp.route("/api/seller/me", methods=["PUT"])
+@seller_bp.route("/api/seller/me", methods=["PUT"])
 @api
 def seller_update_me():
     d = request.get_json(silent=True) or {}
@@ -666,7 +671,7 @@ def product_payload(d):
 PRODUCT_COLS = "id, name, description, price, image_url, category, stock, created_at, seller_id, cost_price"
 
 
-@bp.route("/api/seller/products", methods=["GET"])
+@seller_bp.route("/api/seller/products", methods=["GET"])
 @api
 def seller_products():
     current_user()
@@ -687,7 +692,7 @@ def seller_products():
         return ok(products=rows)
 
 
-@bp.route("/api/seller/products", methods=["POST"])
+@seller_bp.route("/api/seller/products", methods=["POST"])
 @api
 def seller_create_product():
     payload = product_payload(request.get_json(silent=True) or {})
@@ -701,7 +706,7 @@ def seller_create_product():
         return ok(message="Product added", product=cur.fetchone()), 201
 
 
-@bp.route("/api/seller/products/<int:pid>", methods=["PUT"])
+@seller_bp.route("/api/seller/products/<int:pid>", methods=["PUT"])
 @api
 def seller_update_product(pid):
     payload = product_payload(request.get_json(silent=True) or {})
@@ -718,7 +723,7 @@ def seller_update_product(pid):
         return ok(message="Product updated", product=row)
 
 
-@bp.route("/api/seller/products/<int:pid>", methods=["DELETE"])
+@seller_bp.route("/api/seller/products/<int:pid>", methods=["DELETE"])
 @api
 def seller_delete_product(pid):
     current_user()
@@ -733,7 +738,7 @@ def seller_delete_product(pid):
 # ---------------------------------------------------------------------
 # SELLER: orders + wallet + withdrawals
 # ---------------------------------------------------------------------
-@bp.route("/api/seller/orders", methods=["GET"])
+@seller_bp.route("/api/seller/orders", methods=["GET"])
 @api
 def seller_orders():
     current_user()
@@ -756,7 +761,7 @@ def seller_orders():
         return ok(orders=rows)
 
 
-@bp.route("/api/seller/wallet", methods=["GET"])
+@seller_bp.route("/api/seller/wallet", methods=["GET"])
 @api
 def seller_wallet():
     current_user()
@@ -770,7 +775,7 @@ def seller_wallet():
         return ok(wallet=summary, transactions=tx, withdrawals=wd)
 
 
-@bp.route("/api/seller/withdrawals", methods=["POST"])
+@seller_bp.route("/api/seller/withdrawals", methods=["POST"])
 @api
 def seller_request_withdrawal():
     d = request.get_json(silent=True) or {}
@@ -1150,7 +1155,7 @@ def make_password():
     return "".join(secrets.choice(alphabet) for _ in range(10))
 
 
-@bp.route("/api/seller/apply-public", methods=["POST"])
+@seller_bp.route("/api/seller/apply-public", methods=["POST"])
 @api
 def seller_apply_public():
     d = request.get_json(silent=True) or {}
@@ -1184,7 +1189,7 @@ def seller_apply_public():
               application_id=app_id)
 
 
-@bp.route("/api/seller/change-password", methods=["POST"])
+@seller_bp.route("/api/seller/change-password", methods=["POST"])
 @api
 def seller_change_password():
     d = request.get_json(silent=True) or {}
@@ -1259,7 +1264,8 @@ def admin_seller_application_approve(aid):
     emailed = notify_seller_credentials(a["email"], a["owner_name"], a["store_name"], password)
     return ok(message="Approved. Send these login details to the seller." if not emailed
               else "Approved. The login details were also sent to the seller's email.",
-              login_id=a["email"], password=password, store_name=a["store_name"], phone=a["phone"], emailed=emailed)
+              login_id=a["email"], password=password, store_name=a["store_name"], phone=a["phone"], emailed=emailed,
+              login_url=seller_url())
 
 
 @bp.route("/api/admin/seller-applications/<int:aid>/reject", methods=["POST"])
@@ -1501,7 +1507,7 @@ def _delete_coupon(cur, cid, seller_id):
     return "Coupon deleted"
 
 
-@bp.route("/api/seller/coupons", methods=["GET"])
+@seller_bp.route("/api/seller/coupons", methods=["GET"])
 @api
 def seller_coupons():
     current_user()
@@ -1513,7 +1519,7 @@ def seller_coupons():
         return ok(coupons=cur.fetchall())
 
 
-@bp.route("/api/seller/coupons", methods=["POST"])
+@seller_bp.route("/api/seller/coupons", methods=["POST"])
 @api
 def seller_coupon_create():
     d = request.get_json(silent=True) or {}
@@ -1524,7 +1530,7 @@ def seller_coupon_create():
     return ok(message="Coupon created. Customers can use it on your products.")
 
 
-@bp.route("/api/seller/coupons/<int:cid>", methods=["PUT"])
+@seller_bp.route("/api/seller/coupons/<int:cid>", methods=["PUT"])
 @api
 def seller_coupon_update(cid):
     d = request.get_json(silent=True) or {}
@@ -1535,7 +1541,7 @@ def seller_coupon_update(cid):
     return ok(message="Coupon saved")
 
 
-@bp.route("/api/seller/coupons/<int:cid>", methods=["DELETE"])
+@seller_bp.route("/api/seller/coupons/<int:cid>", methods=["DELETE"])
 @api
 def seller_coupon_delete(cid):
     current_user()
@@ -1615,10 +1621,42 @@ def platform_balances(cur):
     cur.execute("SELECT type, COALESCE(SUM(amount),0) AS v FROM platform_transactions GROUP BY type")
     t = {r["type"]: r["v"] for r in cur.fetchall()}
     owed = seller_available + pending            # part of the pool that belongs to sellers
+    other = pool - owed - commission
+
+    # delivery charges of delivered orders, split by area (Dhaka division / outside)
+    cur.execute("""
+        SELECT CASE WHEN delivery_zone='dhaka' OR (COALESCE(delivery_zone,'')='' AND delivery_fee=70)
+                    THEN 'dhaka' ELSE 'outside' END AS zone,
+               COUNT(*) AS n, COALESCE(SUM(delivery_fee),0) AS fees
+        FROM orders WHERE status='delivered' AND pool_credited_at IS NOT NULL
+        GROUP BY 1""")
+    zones = {r["zone"]: r for r in cur.fetchall()}
+    dz, oz = zones.get("dhaka", {}), zones.get("outside", {})
+    delivery_total = Decimal(dz.get("fees", 0) or 0) + Decimal(oz.get("fees", 0) or 0)
+
+    cur.execute("SELECT COALESCE(SUM(-amount),0) AS v FROM seller_transactions WHERE type='return_charge'")
+    return_recovered = cur.fetchone()["v"]
+    cur.execute("SELECT COALESCE(SUM(refund_amount),0) AS v FROM orders WHERE refund_status='due'")
+    refunds_due = cur.fetchone()["v"]
+    cur.execute("SELECT COALESCE(SUM(refund_amount),0) AS v FROM orders WHERE refund_status='due' AND pool_credited_at IS NOT NULL")
+    refunds_due_in_pool = cur.fetchone()["v"]
+    cur.execute("""SELECT COALESCE(SUM(-bal),0) AS v FROM
+                   (SELECT SUM(amount) AS bal FROM seller_transactions GROUP BY seller_id HAVING SUM(amount) < 0) x""")
+    sellers_owe_us = cur.fetchone()["v"]
+    cur.execute("SELECT COUNT(*) AS n FROM orders WHERE status='returned'")
+    returned_orders = cur.fetchone()["n"]
+
     return {
+        "delivery_total": delivery_total,
+        "delivery_dhaka_orders": dz.get("n", 0), "delivery_dhaka_fees": dz.get("fees", 0),
+        "delivery_outside_orders": oz.get("n", 0), "delivery_outside_fees": oz.get("fees", 0),
+        "return_recovered": return_recovered, "refunds_due": refunds_due,
+        "sellers_owe_us": sellers_owe_us, "returned_orders": returned_orders,
+        "own_sales": other - delivery_total - return_recovered - refunds_due_in_pool,
+
         "pool": pool, "commission": commission,
         "seller_owed": owed, "seller_available": seller_available, "pending_withdrawals": pending,
-        "other": pool - owed - commission,       # delivery fees and sales of your own products
+        "other": other,                          # delivery fees, return charges and sales of your own products
         "collected_total": t.get("customer_payment", 0),
         "paid_to_sellers": -t.get("seller_payout", 0),
         "refunded_to_customers": -t.get("customer_refund", 0),
@@ -1665,6 +1703,67 @@ def admin_wallet_commission_withdraw():
                            VALUES (%s,'owner_withdrawal',%s,%s,%s)""", (wallet, -amount, note, admin["user_id"]))
         audit(cur, admin, "commission_taken", "wallet", None, f"{amount} {note}")
     return ok(message=f"\u09f3{amount:.2f} taken out of your commission wallet")
+
+
+# ---------------------------------------------------------------------
+# GO LIVE: clear TEST data (sales history) before real production
+# ---------------------------------------------------------------------
+RESET_CONFIRM_WORD = "DELETE TEST DATA"
+# order matters (children first). Products, customers, sellers, coupons and admin accounts are NOT touched.
+RESET_TABLES = [
+    ("platform_transactions", "Admin wallet history"),
+    ("seller_transactions", "Seller wallet history"),
+    ("withdrawals", "Withdrawal requests"),
+    ("reviews", "Product reviews"),
+    ("order_items", "Order items"),
+    ("orders", "Orders"),
+    ("chat_messages", "Customer chat messages"),
+    ("audit_log", "Activity log"),
+]
+
+
+def _reset_counts(cur):
+    out = []
+    for table, label in RESET_TABLES:
+        cur.execute("SELECT to_regclass(%s) AS t", (f"public.{table}",))
+        if not cur.fetchone()["t"]:
+            continue
+        cur.execute(f"SELECT COUNT(*) AS n FROM {table}")
+        out.append({"table": table, "label": label, "count": cur.fetchone()["n"]})
+    return out
+
+
+@bp.route("/api/admin/reset-data", methods=["GET"])
+@api
+def admin_reset_preview():
+    admin_required()
+    with db() as (conn, cur):
+        return ok(tables=_reset_counts(cur), confirm_word=RESET_CONFIRM_WORD,
+                  kept=["Products", "Customer accounts", "Sellers and seller applications", "Coupons (usage counts reset to 0)", "Admin accounts", "Settings"])
+
+
+@bp.route("/api/admin/reset-data", methods=["POST"])
+@api
+def admin_reset_data():
+    admin = admin_required()
+    d = request.get_json(silent=True) or {}
+    if str(d.get("confirm", "")).strip() != RESET_CONFIRM_WORD:
+        raise ApiError(f'Type "{RESET_CONFIRM_WORD}" to confirm')
+    with db() as (conn, cur):
+        cur.execute("SELECT pg_advisory_xact_lock(7771003)")
+        before = _reset_counts(cur)
+        for table, _ in RESET_TABLES:
+            cur.execute("SELECT to_regclass(%s) AS t", (f"public.{table}",))
+            if cur.fetchone()["t"]:
+                cur.execute(f"DELETE FROM {table}")
+                cur.execute("SELECT pg_get_serial_sequence(%s, 'id') AS seq", (table,))
+                seq = cur.fetchone()["seq"]
+                if seq:
+                    cur.execute("SELECT setval(%s, 1, false)", (seq,))   # next order is #1 again
+        cur.execute("UPDATE coupons SET used_count = 0")
+        cleared = sum(int(t["count"]) for t in before)
+        audit(cur, admin, "test_data_cleared", "system", None, f"{cleared} rows removed before going live")
+    return ok(message=f"Test data cleared ({cleared} rows). Your store is ready for real orders.", cleared=cleared)
 
 
 # ---------------------------------------------------------------------
@@ -1736,11 +1835,16 @@ def base_url():
     return url
 
 
+def seller_url():
+    """Public address of the separate Seller Center service (set SELLER_APP_URL in its host)."""
+    return os.environ.get("SELLER_APP_URL", "").rstrip("/")
+
+
 def notify_seller_credentials(email, owner, store, password):
     return send_email(email, "Your Zento seller account is ready", f"""
       <p>Hello {html.escape(owner)}, your store <b>{html.escape(store)}</b> was approved.</p>
       <p><b>Login ID:</b> {html.escape(email)}<br><b>Temporary password:</b> {html.escape(password)}</p>
-      <p>Log in at <a href="{html.escape(base_url())}/seller/">{html.escape(base_url())}/seller/</a>.
+      <p>Log in at <a href="{html.escape(seller_url() or base_url())}">{html.escape(seller_url() or base_url())}</a>.
       You will be asked to choose your own password the first time.</p>""")
 
 
@@ -1829,11 +1933,17 @@ def mp_reverse_order(cur, order_id, final_status, reason=""):
     if coupon_id:
         c.execute("UPDATE coupons SET used_count = GREATEST(used_count-1,0) WHERE id=%s", (coupon_id,))
 
+    # Delivery fee of this order, so a RETURN can be charged to the seller(s) (never to the admin)
+    c.execute("SELECT COALESCE(delivery_fee,0) FROM orders WHERE id=%s", (order_id,))
+    order_delivery = Decimal(c.fetchone()[0] or 0)
+    c.execute("SELECT COALESCE(SUM(subtotal),0) FROM order_items WHERE order_id=%s", (order_id,))
+    order_items_total = Decimal(c.fetchone()[0] or 0)
+
     c.execute("""SELECT id, seller_id, seller_earning, COALESCE(commission_amount,0),
-                        COALESCE(discount_amount,0), COALESCE(discount_by,'')
+                        COALESCE(discount_amount,0), COALESCE(discount_by,''), subtotal
                  FROM order_items
                  WHERE order_id=%s AND credited_at IS NOT NULL AND refunded_at IS NULL FOR UPDATE""", (order_id,))
-    for item_id, seller_id, earning, comm, disc, disc_by in c.fetchall():
+    for item_id, seller_id, earning, comm, disc, disc_by, item_subtotal in c.fetchall():
         # Admin wallet: the commission (and the Zento coupon cost) of this sale is reversed
         if comm and Decimal(comm) > 0:
             c.execute("""INSERT INTO platform_transactions (wallet, type, amount, order_id, order_item_id, note)
@@ -1846,6 +1956,15 @@ def mp_reverse_order(cur, order_id, final_status, reason=""):
         c.execute("""INSERT INTO seller_transactions (seller_id, type, amount, order_id, order_item_id, note)
                      VALUES (%s,'sale_refund',%s,%s,%s,%s)""",
                   (seller_id, -earning, order_id, item_id, f"Order #{order_id} was {final_status}: sale taken back"))
+        # RETURN = the seller's responsibility. On top of taking the sale back, the delivery money the
+        # customer gets refunded is charged to the seller, so the admin never carries the cost of a return.
+        if final_status == "returned" and order_delivery > 0 and order_items_total > 0:
+            share = q2(order_delivery * Decimal(item_subtotal or 0) / order_items_total)
+            if share > 0:
+                c.execute("""INSERT INTO seller_transactions (seller_id, type, amount, order_id, order_item_id, note)
+                             VALUES (%s,'return_charge',%s,%s,%s,%s)""",
+                          (seller_id, -share, order_id, item_id,
+                           f"Order #{order_id} was returned: delivery charge {share} is charged to the seller"))
         c.execute("UPDATE order_items SET refunded_at=NOW() WHERE id=%s", (item_id,))
 
     # the customer needs money back if they already paid (online) or the goods were delivered and returned
@@ -1909,7 +2028,7 @@ def admin_refund_done(oid):
 COURIERS = ("Pathao", "Steadfast", "RedX", "Paperfly", "eCourier", "Sundarban", "SA Paribahan", "Own delivery", "Other")
 
 
-@bp.route("/api/seller/orders/<int:item_id>/ship", methods=["POST"])
+@seller_bp.route("/api/seller/orders/<int:item_id>/ship", methods=["POST"])
 @api
 def seller_ship_item(item_id):
     d = request.get_json(silent=True) or {}
@@ -1948,7 +2067,7 @@ def seller_ship_item(item_id):
 _reset_sent = {}
 
 
-@bp.route("/api/seller/forgot-password", methods=["POST"])
+@seller_bp.route("/api/seller/forgot-password", methods=["POST"])
 @api
 def seller_forgot_password():
     d = request.get_json(silent=True) or {}
@@ -1970,7 +2089,7 @@ def seller_forgot_password():
         cur.execute("UPDATE password_resets SET used_at=NOW() WHERE user_id=%s AND used_at IS NULL", (u["id"],))
         cur.execute("""INSERT INTO password_resets (user_id, token_hash, expires_at)
                        VALUES (%s,%s,NOW() + INTERVAL '30 minutes')""", (u["id"], hashlib.sha256(token.encode()).hexdigest()))
-    link = f"{base_url()}/seller/?reset={token}"
+    link = f"{seller_url() or base_url()}/?reset={token}"
     send_email(email, "Reset your Zento seller password", f"""<p>Hello {html.escape(str(u['name']))},</p>
       <p>Open this link to choose a new password. It works once and expires in 30 minutes.</p>
       <p><a href="{html.escape(link)}">{html.escape(link)}</a></p>
@@ -1978,7 +2097,7 @@ def seller_forgot_password():
     return generic
 
 
-@bp.route("/api/seller/reset-password", methods=["POST"])
+@seller_bp.route("/api/seller/reset-password", methods=["POST"])
 @api
 def seller_reset_password():
     d = request.get_json(silent=True) or {}
@@ -1999,19 +2118,8 @@ def seller_reset_password():
 
 
 # ---------------------------------------------------------------------
-# PAGES
+# PAGES  (the Seller Center page now lives in seller_app/, a separate service)
 # ---------------------------------------------------------------------
-@bp.route("/seller")
-@bp.route("/seller/")
-def seller_portal():
-    return send_from_directory(os.path.join(_H["base_dir"], "seller"), "index.html")
-
-
-@bp.route("/seller/<path:filename>")
-def seller_files(filename):
-    return send_from_directory(os.path.join(_H["base_dir"], "seller"), filename)
-
-
 @bp.route("/store/<slug>")
 def store_page(slug):
     path = os.path.join(_H["base_dir"], "store.html")
@@ -2021,7 +2129,11 @@ def store_page(slug):
 
 
 # ---------------------------------------------------------------------
-def init_marketplace(app, get_user, admin_user, base_dir, ensure_base=None):
+def init_marketplace(app, get_user, admin_user, base_dir, ensure_base=None, mode="main"):
+    """
+    mode="main"   -> customer website + admin panel (NO seller routes, NO /seller page)
+    mode="seller" -> only the Seller Center API (used by seller_app/server.py)
+    """
     _H.update(get_user=get_user, admin_user=admin_user, base_dir=base_dir)
     try:
         if ensure_base:
@@ -2030,4 +2142,7 @@ def init_marketplace(app, get_user, admin_user, base_dir, ensure_base=None):
         log.info("Marketplace tables ready")
     except Exception:
         log.exception("Marketplace table setup failed (will retry on next boot)")
-    app.register_blueprint(bp)
+    if mode == "seller":
+        app.register_blueprint(seller_bp)
+    else:
+        app.register_blueprint(bp)

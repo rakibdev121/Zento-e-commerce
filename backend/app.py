@@ -50,6 +50,15 @@ def frontend_files(filename):
     if filename.startswith("api/"):
         return {"status": "error", "message": "Not found"}, 404
 
+    # Never serve server code, secrets or the separate Seller Center from the public store
+    parts = [p for p in filename.replace("\\", "/").split("/") if p]
+    blocked_dirs = {"backend", "seller_app", "node_modules", "seller"}
+    if (not parts or parts[0].lower() in blocked_dirs
+            or any(p.startswith(".") for p in parts)
+            or parts[-1].lower().endswith((".py", ".env", ".md", ".txt", ".json", ".lock", ".log"))
+            and parts[-1].lower() not in ("robots.txt",)):
+        return send_from_directory(BASE_DIR, "index.html")
+
     file_path = os.path.join(BASE_DIR, filename)
 
     if os.path.isfile(file_path):
@@ -1013,6 +1022,48 @@ def delete_admin(user_id):
 # Profile + Checkout + Orders
 # =========================================================
 
+
+# ---------------------------------------------------------
+# DELIVERY CHARGE (by area)
+# Inside Dhaka division = 70 BDT, everywhere else = 130 BDT
+# ---------------------------------------------------------
+DELIVERY_FEE_DHAKA = 70
+DELIVERY_FEE_OUTSIDE = 130
+
+# All 13 districts of Dhaka division (lower case, no spaces/punctuation)
+DHAKA_DIVISION_DISTRICTS = {
+    "dhaka", "gazipur", "narayanganj", "narsingdi", "munshiganj", "manikganj",
+    "tangail", "kishoreganj", "faridpur", "gopalganj", "madaripur",
+    "rajbari", "shariatpur",
+}
+
+
+def _norm_place(value):
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
+
+
+def delivery_zone_for(city):
+    """Return ('dhaka' | 'outside', fee) for the district/city the customer picked."""
+    key = _norm_place(city)
+    # accept "Dhaka", "Dhaka City", "Dhaka Division", "Gazipur, Dhaka" etc.
+    inside = key in {_norm_place(d) for d in DHAKA_DIVISION_DISTRICTS}
+    if not inside:
+        for d in DHAKA_DIVISION_DISTRICTS:
+            if key.startswith(d) or key.endswith("dhakadivision") or key.endswith("dhaka"):
+                inside = True
+                break
+    if inside:
+        return "dhaka", DELIVERY_FEE_DHAKA
+    return "outside", DELIVERY_FEE_OUTSIDE
+
+
+@app.route("/api/delivery-fee", methods=["GET"])
+def delivery_fee_quote():
+    zone, fee = delivery_zone_for(request.args.get("city", ""))
+    return {"status": "success", "zone": zone, "delivery_fee": fee,
+            "dhaka_fee": DELIVERY_FEE_DHAKA, "outside_fee": DELIVERY_FEE_OUTSIDE}
+
+
 def ensure_order_tables():
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cursor = conn.cursor()
@@ -1057,6 +1108,11 @@ def ensure_order_tables():
     cursor.execute("""
         ALTER TABLE orders
         ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ
+    """)
+
+    cursor.execute("""
+        ALTER TABLE orders
+        ADD COLUMN IF NOT EXISTS delivery_zone TEXT DEFAULT ''
     """)
 
     cursor.execute("""
@@ -1444,7 +1500,16 @@ def create_order():
                 "message": "No valid products in cart"
             }, 400
 
-        delivery_fee = 0 if subtotal >= 100 else 5
+        if not city:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return {
+                "status": "error",
+                "message": "Please select your district"
+            }, 400
+
+        delivery_zone, delivery_fee = delivery_zone_for(city)
 
         # ZENTO_MARKETPLACE: coupon (seller coupon = seller pays, admin coupon = Zento pays)
         coupon_code = str(data.get("coupon_code") or "").strip()
@@ -1523,6 +1588,8 @@ def create_order():
 
         order_id, created_at = cursor.fetchone()
 
+        cursor.execute("UPDATE orders SET delivery_zone = %s WHERE id = %s", (delivery_zone, order_id))
+
         if coupon_info:
             cursor.execute("""
                 UPDATE orders
@@ -1592,6 +1659,7 @@ def create_order():
                 "id": order_id,
                 "subtotal": subtotal,
                 "delivery_fee": delivery_fee,
+                "delivery_zone": delivery_zone,
                 "discount_total": discount_total,
                 "coupon_code": coupon_info["coupon"]["code"] if coupon_info else "",
                 "total": total,
