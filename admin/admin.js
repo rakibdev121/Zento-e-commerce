@@ -592,7 +592,7 @@ async function mpCouponAction(id, act) {
 const auLabel = { seller_application_approved: "Approved seller application", seller_application_rejected: "Rejected seller application", seller_status: "Changed seller status",
   withdrawal_approved: "Paid a withdrawal", withdrawal_rejected: "Rejected a withdrawal", marketplace_settings: "Changed marketplace settings",
   coupon_created: "Created coupon", coupon_updated: "Changed coupon", coupon_deleted: "Deleted coupon", review_removed: "Removed a review",
-  order_status: "Changed order status", refund_sent: "Marked refund as sent" };
+  order_status: "Changed order status", refund_sent: "Marked refund as sent", commission_taken: "Took out commission" };
 function vAudit() {
   return head("Activity log", "Every important admin action, with who did it and when") + `
   <section class="card table-card"><div class="tscroll"><table><thead><tr><th>When</th><th>Admin</th><th>Action</th><th>Details</th></tr></thead>
@@ -607,6 +607,57 @@ async function mpLoadAudit() {
       <td>${esc(auLabel[e.action] || e.action)}</td><td>${e.target_type ? `<small>${esc(e.target_type)} ${esc(e.target_id)}</small> ` : ""}${esc(e.detail || "")}</td></tr>`).join("")
       : `<tr><td colspan="4"><div class="empty">Nothing recorded yet.</div></td></tr>`;
   } catch (e) { body.innerHTML = `<tr><td colspan="4"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+
+/* ---------- Wallet: your commission + the common pool of all customer money ---------- */
+MP.walletFilter = "";
+const wlType = { commission: "Commission", commission_refund: "Commission taken back (return)", coupon_cost: "Zento coupon cost", coupon_cost_refund: "Zento coupon cost given back",
+  customer_payment: "Customer payment", customer_refund: "Refund to customer", seller_payout: "Seller payout", owner_withdrawal: "Commission taken out" };
+function vWallet() {
+  const opts = [["", "All"], ["commission", "Commission wallet"], ["pool", "Customer money pool"]]
+    .map(([v, l]) => `<option value="${v}"${v === MP.walletFilter ? " selected" : ""}>${l}</option>`).join("");
+  return head("Wallet", "Your commission, and all customer money held in one pool", `<label class="field"><select id="wlFilter" aria-label="Filter wallet history">${opts}</select></label><button class="btn btn-primary" id="wlTake">Take out my commission</button>`) + `
+  <div id="wlAlert"></div>
+  <div id="wlCards" style="display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-bottom:14px"></div>
+  <section class="card table-card"><div style="padding:14px 16px;font-weight:700">History</div><div class="tscroll"><table><thead><tr><th>Date</th><th>Wallet</th><th>Type</th><th>Details</th><th>Amount</th></tr></thead>
+  <tbody id="mpBody"><tr><td colspan="5"><div class="empty">Loading...</div></td></tr></tbody></table></div></section>`;
+}
+async function mpLoadWallet() {
+  const body = $("#mpBody"); if (!body) return;
+  try {
+    const d = await api("/api/admin/wallet" + (MP.walletFilter ? `?wallet=${MP.walletFilter}` : ""));
+    if (!$("#mpBody")) return;
+    MP.wallet = d.balances;
+    const b = d.balances;
+    const card = (l, v, sub) => `<div class="card" style="padding:14px"><small>${l}</small><div style="font-size:22px;font-weight:700;margin:2px 0">${v}</div><small style="opacity:.7">${sub}</small></div>`;
+    $("#wlCards").innerHTML =
+      card("My commission wallet", money(b.commission), `Earned ${money(b.commission_earned)} · Zento coupons cost ${money(b.coupon_cost)} · Taken out ${money(b.taken_out)}`) +
+      card("Customer money pool", money(b.pool), `Collected ${money(b.collected_total)} · Paid to sellers ${money(b.paid_to_sellers)} · Refunded ${money(b.refunded_to_customers)}`) +
+      card("Owed to sellers", money(b.seller_owed), `Available ${money(b.seller_available)} · Withdrawals waiting ${money(b.pending_withdrawals)}`) +
+      card("Other money in pool", money(b.other), "Delivery fees and sales of your own products");
+    $("#wlAlert").innerHTML = Number(b.pool) < Number(b.pending_withdrawals)
+      ? `<div class="card" style="padding:12px 16px;margin-bottom:12px;border-color:#c62839;color:#c62839">The pool (${money(b.pool)}) is smaller than the withdrawals waiting (${money(b.pending_withdrawals)}). Customer money enters the pool when an order is marked delivered.</div>` : "";
+    body.innerHTML = d.transactions.length ? d.transactions.map((t) => `<tr><td>${dshort(t.created_at)}</td>
+      <td><span class="pill ${t.wallet === "commission" ? "info" : "warn"}">${t.wallet === "commission" ? "Commission" : "Pool"}</span></td>
+      <td>${esc(wlType[t.type] || t.type)}</td><td>${esc(t.note || "")}</td>
+      <td style="font-weight:700;color:${Number(t.amount) >= 0 ? "#0a8f5b" : "#c62839"}">${Number(t.amount) >= 0 ? "+" : "−"}${money(Math.abs(t.amount))}</td></tr>`).join("")
+      : `<tr><td colspan="5"><div class="empty">No wallet activity yet. It starts when an order is marked delivered.</div></td></tr>`;
+  } catch (e) { body.innerHTML = `<tr><td colspan="5"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+function mpWalletTake() {
+  const avail = Number(MP.wallet?.commission || 0);
+  showModal(`<div class="modal-h"><h2>Take out my commission</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div>
+  <div class="modal-b"><p>Commission wallet balance: <b>${money(avail)}</b>. The amount is also taken out of the customer money pool.</p>
+  <div class="form"><label class="full">Amount (BDT)<input id="wlAmt" type="number" min="1" step="0.01" max="${avail}"></label>
+  <label class="full">Note (optional)<input id="wlNote" maxlength="200" placeholder="e.g. sent to my bKash"></label></div>
+  <p id="wlErr" style="color:#c62839;min-height:18px"></p></div>
+  <div class="modal-f"><button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" id="wlOk">Take out</button></div>`);
+  $("#wlOk").addEventListener("click", async () => {
+    try {
+      const r = await api("/api/admin/wallet/commission-withdraw", { method: "POST", body: JSON.stringify({ amount: $("#wlAmt").value, note: $("#wlNote").value }) });
+      closeModal(); toast(r.message); mpLoadWallet();
+    } catch (e) { $("#wlErr").textContent = e.message; }
+  });
 }
 
 function vWithdrawals() {
@@ -673,8 +724,9 @@ async function mpLoadMarket() {
 }
 
 function mpWire(k) {
-  if (!["sellers", "withdrawals", "marketplace", "applications", "coupons", "audit"].includes(k)) return;
+  if (!["sellers", "withdrawals", "marketplace", "applications", "coupons", "audit", "wallet"].includes(k)) return;
   if (k === "audit") mpLoadAudit();
+  if (k === "wallet") { mpLoadWallet(); const f = $("#wlFilter"); if (f) f.addEventListener("change", (e) => { MP.walletFilter = e.target.value; mpLoadWallet(); }); const t = $("#wlTake"); if (t) t.addEventListener("click", mpWalletTake); }
   if (k === "coupons") { mpLoadCoupons(); const b = $("#cpNew"); if (b) b.addEventListener("click", () => mpCouponForm()); }
   if (k === "applications") { mpLoadApps(); const f = $("#mpAppFilter"); if (f) f.addEventListener("change", (e) => { MP.appFilter = e.target.value; mpLoadApps(); }); }
   if (k === "sellers") { mpLoadSellers(); const f = $("#mpSellerFilter"); if (f) f.addEventListener("change", (e) => { MP.sellerFilter = e.target.value; mpLoadSellers(); }); }
@@ -705,11 +757,12 @@ const ROUTES = {
   applications: { t: "Seller Applications", i: "sellers", v: vApplications },
   sellers: { t: "Sellers", i: "sellers", v: vSellers },
   withdrawals: { t: "Withdrawals", i: "wallet", v: vWithdrawals },
+  wallet: { t: "Wallet", i: "wallet", v: vWallet },
   audit: { t: "Activity log", i: "analytics", v: vAudit },
   coupons: { t: "Coupons", i: "star", v: vCoupons },
   marketplace: { t: "Marketplace", i: "star", v: vMarket }
 };
-const MAIN = ["dashboard", "products", "orders", "messages", "customers", "applications", "sellers", "withdrawals", "coupons", "marketplace", "audit", "analytics"];
+const MAIN = ["dashboard", "products", "orders", "messages", "customers", "applications", "sellers", "withdrawals", "wallet", "coupons", "marketplace", "audit", "analytics"];
 const REPORTS = ["lowstock", "recent", "revenue"];
 const curRoute = () => { const k = (location.hash || "#dashboard").slice(1); return ROUTES[k] ? k : "dashboard"; };
 
