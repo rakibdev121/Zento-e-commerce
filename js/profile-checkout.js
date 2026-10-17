@@ -167,7 +167,9 @@ document.addEventListener("DOMContentLoaded", () => {
         processing: "Processing",
         shipped: "Shipped",
         out_for_delivery: "Out for Delivery",
-        delivered: "Delivered"
+        delivered: "Delivered",
+        cancelled: "Cancelled",
+        returned: "Returned"
       };
 
       const steps = [
@@ -185,7 +187,13 @@ document.addEventListener("DOMContentLoaded", () => {
           steps.findIndex(step => step[0] === order.status)
         );
 
-        const tracking = steps.map((step, index) => `
+        const ended = order.status === "cancelled" || order.status === "returned";
+
+        const tracking = ended
+          ? `<div class="order-ended">${order.status === "cancelled" ? "This order was cancelled." : "This order was returned."}${order.cancel_reason ? " " + escapeHtml(order.cancel_reason) : ""}
+              ${order.refund_status === "due" ? `<br><strong>Refund of ${money(order.refund_amount)} is being processed.</strong>` : ""}
+              ${order.refund_status === "refunded" ? `<br><strong>Refund of ${money(order.refund_amount)} was sent.</strong>` : ""}</div>`
+          : steps.map((step, index) => `
           <div class="tracking-step ${index <= currentIndex ? "done" : ""} ${index === currentIndex ? "current" : ""}">
             <div class="tracking-dot">${index <= currentIndex ? "✓" : ""}</div>
             <span>${step[1]}</span>
@@ -211,6 +219,7 @@ document.addEventListener("DOMContentLoaded", () => {
                   <div>
                     <strong>${escapeHtml(item.name)}</strong>
                     <small>${item.quantity} × ${money(item.price)}</small>
+                    ${item.tracking_no ? `<small class="item-tracking">${escapeHtml(item.courier)} tracking: <b>${escapeHtml(item.tracking_no)}</b></small>` : ""}
                   </div>
                   <strong>${money(item.subtotal)}</strong>
                 </div>
@@ -245,7 +254,6 @@ document.addEventListener("DOMContentLoaded", () => {
               <div>
                 <small>Total</small>
                 <strong>${money(order.total)}</strong>
-                ${order.discount_amount > 0 ? `<small class="discount-green">Coupon ${escapeHtml(order.coupon_code)} saved ${money(order.discount_amount)}</small>` : ""}
               </div>
 
               <div>
@@ -253,6 +261,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 <strong>${order.updated_at ? new Date(order.updated_at).toLocaleString() : "-"}</strong>
               </div>
             </div>
+
+            ${order.status === "pending" || order.status === "approved"
+              ? `<button type="button" class="cancel-order-btn" data-cancel-order="${order.id}">Cancel order</button>`
+              : ""}
           </article>
         `;
       }).join("");
@@ -264,6 +276,26 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+
+  document.addEventListener("click", async event => {
+    const btn = event.target.closest("[data-cancel-order]");
+    if (!btn) return;
+
+    if (!confirm("Cancel this order?")) return;
+
+    btn.disabled = true;
+
+    try {
+      await api(`/api/orders/${btn.dataset.cancelOrder}/cancel`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      await loadOrders();
+    } catch (error) {
+      alert(error.message);
+      btn.disabled = false;
+    }
+  });
 
   async function openProfile() {
     if (!token()) {
@@ -333,79 +365,64 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     const delivery = subtotal >= 100 ? 0 : 5;
-    const discount = Math.min(couponDiscount, subtotal);
-    const total = subtotal + delivery - discount;
+    const discount = Math.min(coupon.discount, subtotal);
+    const total = subtotal - discount + delivery;
 
     if (itemCount) itemCount.textContent = `${count} item${count === 1 ? "" : "s"}`;
     if (subtotalEl) subtotalEl.textContent = money(subtotal);
     if (deliveryEl) deliveryEl.textContent = delivery === 0 ? "FREE" : money(delivery);
-
-    const discountRow = document.getElementById("checkoutDiscountRow");
-    const discountEl = document.getElementById("checkoutDiscount");
-    const discountLabel = document.getElementById("checkoutDiscountLabel");
-    if (discountRow) discountRow.hidden = !(couponCode && discount > 0);
-    if (discountEl) discountEl.textContent = "-" + money(discount);
-    if (discountLabel) discountLabel.textContent = couponCode ? `Coupon (${couponCode})` : "Coupon discount";
-
     if (totalEl) totalEl.textContent = money(total);
+
+    const discRow = document.getElementById("couponDiscountRow");
+    const discEl = document.getElementById("checkoutDiscount");
+    const discLabel = document.getElementById("couponDiscountLabel");
+    if (discRow) discRow.hidden = !(coupon.code && discount > 0);
+    if (discEl) discEl.textContent = "-" + money(discount);
+    if (discLabel) discLabel.textContent = coupon.code ? `Coupon (${coupon.code})` : "Coupon discount";
   }
 
-  /* ---------- coupon ---------- */
+  /* ---------- coupon code ---------- */
 
-  let couponCode = "";
-  let couponDiscount = 0;
+  const coupon = { code: "", discount: 0 };
+  let couponTimer = null;
 
-  function couponMessage(text, kind) {
+  function setCouponMsg(text, ok) {
     const el = document.getElementById("couponMsg");
     if (!el) return;
     el.textContent = text || "";
-    el.className = "coupon-msg" + (kind ? " " + kind : "");
+    el.className = "coupon-msg" + (text ? (ok ? " ok" : " bad") : "");
   }
 
-  function clearCoupon(keepMessage) {
-    couponCode = "";
-    couponDiscount = 0;
-    const input = document.getElementById("couponInput");
-    if (input) input.value = "";
-    if (!keepMessage) couponMessage("");
-  }
-
-  async function applyCoupon(code, silent) {
+  async function checkCoupon(code, quiet) {
     const cart = getCart();
-    const button = document.getElementById("couponApply");
-
-    if (!code) {
-      couponMessage("Enter a coupon code", "bad");
+    if (!code || !cart.length) {
+      coupon.code = ""; coupon.discount = 0;
+      renderCheckout();
       return;
     }
-
-    if (button) button.disabled = true;
-    if (!silent) couponMessage("Checking coupon...");
-
     try {
       const data = await api("/api/coupons/validate", {
         method: "POST",
         body: JSON.stringify({ code, items: cart })
       });
-
-      couponCode = data.code;
-      couponDiscount = Number(data.discount) || 0;
-      const input = document.getElementById("couponInput");
-      if (input) input.value = data.code;
-      couponMessage(data.message, "ok");
+      coupon.code = data.code;
+      coupon.discount = Number(data.discount) || 0;
+      setCouponMsg(`${data.code} applied. You save ${money(coupon.discount)}.`, true);
     } catch (error) {
-      clearCoupon(true);
-      couponMessage(error.message, "bad");
-    } finally {
-      if (button) button.disabled = false;
-      renderCheckout();
-      updateMobilePay(document.querySelector('input[name="paymentMethod"]:checked')?.value || "cod");
+      coupon.code = ""; coupon.discount = 0;
+      setCouponMsg(error.message, false);
     }
+    renderCheckout();
+    updateMobilePay(document.querySelector('input[name="paymentMethod"]:checked')?.value || "cod");
   }
 
   document.getElementById("couponApply")?.addEventListener("click", () => {
-    const code = document.getElementById("couponInput")?.value.trim() || "";
-    applyCoupon(code, false);
+    const input = document.getElementById("couponInput");
+    const code = (input?.value || "").trim().toUpperCase();
+    if (input) input.value = code;
+    if (!code) { setCouponMsg("Enter a coupon code first.", false); return; }
+    setCouponMsg("Checking...", true);
+    checkCoupon(code);
   });
 
   document.getElementById("couponInput")?.addEventListener("keydown", event => {
@@ -423,7 +440,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function currentTotal() {
     const cart = getCart();
     const subtotal = cart.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
-    return subtotal + (subtotal >= 100 ? 0 : 5) - Math.min(couponDiscount, subtotal);
+    return subtotal - Math.min(coupon.discount, subtotal) + (subtotal >= 100 ? 0 : 5);
   }
 
   function updateMobilePay(method) {
@@ -529,7 +546,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     openPage(checkoutPage);
     renderCheckout();
-    if (couponCode) applyCoupon(couponCode, true);
+    if (coupon.code) checkCoupon(coupon.code, true);   // cart may have changed since the coupon was applied
     loadPaymentInfo();
     await loadProfile();
   }
@@ -629,12 +646,10 @@ document.addEventListener("DOMContentLoaded", () => {
           payment_method: selectedPayment,
           payment_trx_id: isMobilePay ? payTrx : "",
           payment_sender: isMobilePay ? paySender : "",
-          coupon_code: couponCode,
+          coupon_code: coupon.code,
           items: cart
         })
       });
-
-      clearCoupon();
 
       const currentUser = getUser();
 
@@ -647,6 +662,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (typeof window.updateCartUI === "function") {
         window.updateCartUI();
       }
+
+      coupon.code = ""; coupon.discount = 0;
+      const couponInput = document.getElementById("couponInput");
+      if (couponInput) couponInput.value = "";
+      setCouponMsg("", true);
 
       if (message) {
         message.textContent = `✓ Order #${data.order.id} placed successfully`;
