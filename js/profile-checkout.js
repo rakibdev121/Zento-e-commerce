@@ -364,13 +364,14 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
 
-    const delivery = subtotal >= 100 ? 0 : 5;
+    const cityNow = document.getElementById("checkoutCity")?.value || "";
+    const delivery = cityNow && window.ZentoDelivery ? window.ZentoDelivery.fee(cityNow) : 0;
     const discount = Math.min(coupon.discount, subtotal);
     const total = subtotal - discount + delivery;
 
     if (itemCount) itemCount.textContent = `${count} item${count === 1 ? "" : "s"}`;
     if (subtotalEl) subtotalEl.textContent = money(subtotal);
-    if (deliveryEl) deliveryEl.textContent = delivery === 0 ? "FREE" : money(delivery);
+    if (deliveryEl) deliveryEl.textContent = !cityNow ? "Select district" : money(delivery);
     if (totalEl) totalEl.textContent = money(total);
 
     const discRow = document.getElementById("couponDiscountRow");
@@ -380,6 +381,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (discEl) discEl.textContent = "-" + money(discount);
     if (discLabel) discLabel.textContent = coupon.code ? `Coupon (${coupon.code})` : "Coupon discount";
   }
+
+  document.getElementById("checkoutCity")?.addEventListener("change", () => {
+    renderCheckout();
+    updateMobilePay(document.querySelector('input[name="paymentMethod"]:checked')?.value || "cod");
+  });
 
   /* ---------- coupon code ---------- */
 
@@ -440,7 +446,9 @@ document.addEventListener("DOMContentLoaded", () => {
   function currentTotal() {
     const cart = getCart();
     const subtotal = cart.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
-    return subtotal - Math.min(coupon.discount, subtotal) + (subtotal >= 100 ? 0 : 5);
+    const cityNow = document.getElementById("checkoutCity")?.value || "";
+    const deliveryNow = cityNow && window.ZentoDelivery ? window.ZentoDelivery.fee(cityNow) : 0;
+    return subtotal - Math.min(coupon.discount, subtotal) + deliveryNow;
   }
 
   function updateMobilePay(method) {
@@ -627,6 +635,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (message) {
         message.textContent = "Enter the number you paid from and the Transaction ID.";
       }
+      return;
+    }
+
+    if (!document.getElementById("checkoutCity")?.value) {
+      if (message) message.textContent = "Please select your district so we can calculate delivery.";
       return;
     }
 

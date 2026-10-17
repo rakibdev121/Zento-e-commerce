@@ -995,8 +995,7 @@ document.addEventListener("DOMContentLoaded", () => {
       );
     });
 
-    const delivery =
-      subtotal >= 100 ? 0 : 5;
+    const delivery = 0; // charged at checkout, depends on the district
 
     const total =
       subtotal + delivery;
@@ -1007,10 +1006,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (cartDelivery) {
-      cartDelivery.textContent =
-        delivery === 0
-          ? "FREE"
-          : `৳${delivery.toFixed(2)}`;
+      cartDelivery.textContent = "At checkout";
     }
 
     if (cartTotal) {

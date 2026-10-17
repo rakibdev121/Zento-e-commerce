@@ -143,11 +143,5 @@
       .observe(modal, { attributes: true, attributeFilter: ["class"] });
   }
 
-  /* ---------- footer link ---------- */
-  function footerLink() {
-    var f = document.querySelector(".footer-inner");
-    if (!f || f.querySelector(".mp-sell")) return;
-    f.insertAdjacentHTML("beforeend", '<p class="mp-sell"><a href="/seller/">Sell on Zento →</a></p>');
-  }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", footerLink); else footerLink();
+  /* The Seller Center is a separate website now: the store shows no "sell" option. */
 })();
