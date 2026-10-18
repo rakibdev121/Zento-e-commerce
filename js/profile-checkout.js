@@ -142,6 +142,105 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+
+  /* ---------- rate, return, complain ---------- */
+  function orderActions(order) {
+    const sellers = [];
+    order.items.forEach(i => { if (i.seller_id && !sellers.some(x => x.id === i.seller_id)) sellers.push({ id: i.seller_id, name: i.seller_name }); });
+    const parts = [];
+
+    if (order.status === "delivered") {
+      const rate = order.items.map(i => i.reviewed
+        ? `<span class="oa-done">★ Rated: ${escapeHtml(i.name)}</span>`
+        : `<button type="button" class="oa-btn" data-rate="${i.product_id}" data-pname="${escapeHtml(i.name)}">★ Rate ${escapeHtml(i.name)}</button>`).join("");
+      parts.push(`<div class="oa-row">${rate}</div>`);
+
+      if (order.return_request) {
+        const r = order.return_request;
+        const label = r.status === "requested" ? "Return request sent. We are reviewing it."
+          : r.status === "approved" ? "Your return was accepted." : "Your return request was rejected.";
+        parts.push(`<div class="oa-note ${r.status === "rejected" ? "bad" : ""}">${label}${r.admin_note ? " " + escapeHtml(r.admin_note) : ""}</div>`);
+      } else if (order.can_return) {
+        parts.push(`<div class="oa-row"><button type="button" class="oa-btn warn" data-return="${order.id}">↩ Return this order</button><small>You can return within ${order.return_days} days of delivery.</small></div>`);
+      } else {
+        parts.push(`<div class="oa-note">The ${order.return_days}-day return period for this order is over.</div>`);
+      }
+    }
+
+    if (sellers.length) {
+      const done = order.complaints || [];
+      parts.push(`<div class="oa-row">${sellers.map(sl => {
+        const open = done.some(c => c.seller_id === sl.id && c.status === "open");
+        return open ? `<span class="oa-done">Complaint sent about ${escapeHtml(sl.name)}</span>`
+          : `<button type="button" class="oa-btn ghost" data-complain="${order.id}" data-seller="${sl.id}" data-sname="${escapeHtml(sl.name)}">⚑ Complain about ${escapeHtml(sl.name)}</button>`;
+      }).join("")}</div>`);
+    }
+    return parts.length ? `<div class="order-actions">${parts.join("")}</div>` : "";
+  }
+
+  function openSheet(html) {
+    const bg = document.createElement("div");
+    bg.className = "zsheet-bg";
+    bg.innerHTML = `<div class="zsheet" role="dialog" aria-modal="true">${html}</div>`;
+    bg.addEventListener("click", e => { if (e.target === bg) bg.remove(); });
+    document.body.appendChild(bg);
+    return bg;
+  }
+
+  function sheetForm(title, intro, fieldsHtml, okText, onSubmit) {
+    const bg = openSheet(`<h3>${title}</h3>${intro ? `<p class="zs-intro">${intro}</p>` : ""}
+      <form>${fieldsHtml}<div class="zs-err"></div>
+      <div class="zs-btns"><button type="button" class="zs-cancel">Cancel</button><button type="submit" class="zs-ok">${okText}</button></div></form>`);
+    const form = bg.querySelector("form"), err = bg.querySelector(".zs-err"), ok = bg.querySelector(".zs-ok");
+    bg.querySelector(".zs-cancel").addEventListener("click", () => bg.remove());
+    form.addEventListener("submit", async e => {
+      e.preventDefault();
+      ok.disabled = true; err.textContent = "";
+      try { await onSubmit(form); bg.remove(); await loadOrders(); }
+      catch (error) { err.textContent = error.message; ok.disabled = false; }
+    });
+    return bg;
+  }
+
+  document.addEventListener("click", event => {
+    const rate = event.target.closest("[data-rate]");
+    if (rate) {
+      let stars = 0;
+      const bg = sheetForm("Rate this product", escapeHtml(rate.dataset.pname),
+        `<div class="zs-stars">${[1, 2, 3, 4, 5].map(i => `<button type="button" data-s="${i}" aria-label="${i} star">★</button>`).join("")}</div>
+         <textarea name="comment" maxlength="1500" placeholder="Tell others what you think (optional)"></textarea>`,
+        "Submit rating",
+        async form => {
+          if (!stars) throw new Error("Please tap 1 to 5 stars");
+          await api(`/api/products/${rate.dataset.rate}/reviews`, { method: "POST", body: JSON.stringify({ rating: stars, title: "", comment: form.comment.value }) });
+        });
+      bg.querySelector(".zs-stars").addEventListener("click", e => {
+        const b = e.target.closest("button"); if (!b) return;
+        stars = Number(b.dataset.s);
+        bg.querySelectorAll(".zs-stars button").forEach(x => x.classList.toggle("on", Number(x.dataset.s) <= stars));
+      });
+      return;
+    }
+
+    const ret = event.target.closest("[data-return]");
+    if (ret) {
+      sheetForm("Return this order", "Tell us what is wrong. If we accept the return, you get your money back.",
+        `<textarea name="reason" maxlength="500" placeholder="Why do you want to return it? (wrong item, damaged, not as described...)" required></textarea>`,
+        "Send return request",
+        async form => { await api(`/api/orders/${ret.dataset.return}/return-request`, { method: "POST", body: JSON.stringify({ reason: form.reason.value }) }); });
+      return;
+    }
+
+    const cmp = event.target.closest("[data-complain]");
+    if (cmp) {
+      sheetForm(`Complain about ${cmp.dataset.sname}`, "Tell us what the seller did wrong. Zento will check and reply.",
+        `<input name="subject" maxlength="100" placeholder="Short title (for example: fake product)">
+         <textarea name="message" maxlength="1500" placeholder="Describe the problem" required></textarea>`,
+        "Send complaint",
+        async form => { await api(`/api/orders/${cmp.dataset.complain}/complaints`, { method: "POST", body: JSON.stringify({ seller_id: Number(cmp.dataset.seller), subject: form.subject.value, message: form.message.value }) }); });
+    }
+  });
+
   async function loadOrders() {
     const list = document.getElementById("ordersList");
     if (!list) return;
@@ -163,8 +262,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const statusLabels = {
         pending: "Pending",
-        approved: "Approved",
-        processing: "Processing",
+        approved: "Seller approved",
+        processing: "At Zento warehouse",
         shipped: "Shipped",
         out_for_delivery: "Out for Delivery",
         delivered: "Delivered",
@@ -174,9 +273,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const steps = [
         ["pending", "Order Placed"],
-        ["approved", "Approved"],
-        ["processing", "Processing"],
-        ["shipped", "Shipped"],
+        ["approved", "Seller Approved"],
+        ["processing", "At Zento Warehouse"],
+        ["shipped", "With Courier"],
         ["out_for_delivery", "Out for Delivery"],
         ["delivered", "Delivered"]
       ];
@@ -219,6 +318,7 @@ document.addEventListener("DOMContentLoaded", () => {
                   <div>
                     <strong>${escapeHtml(item.name)}</strong>
                     <small>${item.quantity} × ${money(item.price)}</small>
+                    ${item.seller_name ? `<small class="item-seller">Sold by <b>${escapeHtml(item.seller_name)}</b></small>` : ""}
                     ${item.tracking_no ? `<small class="item-tracking">${escapeHtml(item.courier)} tracking: <b>${escapeHtml(item.tracking_no)}</b></small>` : ""}
                   </div>
                   <strong>${money(item.subtotal)}</strong>
@@ -265,6 +365,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ${order.status === "pending" || order.status === "approved"
               ? `<button type="button" class="cancel-order-btn" data-cancel-order="${order.id}">Cancel order</button>`
               : ""}
+            ${orderActions(order)}
           </article>
         `;
       }).join("");
