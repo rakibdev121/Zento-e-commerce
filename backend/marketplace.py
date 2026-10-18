@@ -43,6 +43,7 @@ DEFAULT_SETTINGS = {
     "commission_percent": "10",
     "min_withdrawal": "500",
     "reviews_require_purchase": "true",
+    "return_days": "7",
 }
 READY = False  # becomes True once tables exist
 SELLER_STATUSES = ("pending", "approved", "rejected", "suspended")
@@ -324,6 +325,49 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS courier TEXT DEFAULT '';
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS tracking_no TEXT DEFAULT '';
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS shipped_at TIMESTAMPTZ;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS fulfil_status TEXT NOT NULL DEFAULT 'placed';
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS seller_approved_at TIMESTAMPTZ;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS sent_to_warehouse_at TIMESTAMPTZ;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS warehouse_received_at TIMESTAMPTZ;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS to_wh_courier TEXT DEFAULT '';
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS to_wh_tracking TEXT DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ;
+-- orders that were already moving before this flow existed keep working
+UPDATE order_items oi SET fulfil_status = CASE
+        WHEN o.status IN ('shipped','out_for_delivery','delivered') THEN 'with_courier'
+        WHEN o.status = 'processing' THEN 'at_warehouse'
+        ELSE 'seller_approved' END
+FROM orders o WHERE o.id = oi.order_id AND oi.fulfil_status = 'placed'
+  AND o.status IN ('approved','processing','shipped','out_for_delivery','delivered');
+UPDATE orders SET delivered_at = COALESCE(updated_at, created_at) WHERE status='delivered' AND delivered_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS return_requests (
+    id BIGSERIAL PRIMARY KEY,
+    order_id BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'requested',
+    admin_note TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS return_requests_order_idx ON return_requests (order_id);
+CREATE INDEX IF NOT EXISTS return_requests_status_idx ON return_requests (status, id);
+
+CREATE TABLE IF NOT EXISTS complaints (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    order_id BIGINT REFERENCES orders(id) ON DELETE SET NULL,
+    seller_id BIGINT NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+    subject TEXT NOT NULL DEFAULT '',
+    message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    admin_note TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS complaints_seller_idx ON complaints (seller_id, id);
+CREATE INDEX IF NOT EXISTS complaints_status_idx ON complaints (status, id);
 
 CREATE TABLE IF NOT EXISTS password_resets (
     id BIGSERIAL PRIMARY KEY,
@@ -427,6 +471,7 @@ def mp_credit_order(cur, order_id):
     Takes the platform commission and credits the seller wallet.
     Safe to call twice: items already credited are skipped.
     """
+    cur.execute("UPDATE orders SET delivered_at = COALESCE(delivered_at, NOW()) WHERE id=%s", (order_id,))
     cur.execute("SELECT value FROM marketplace_settings WHERE key='commission_percent'")
     row = cur.fetchone()
     try:
@@ -748,6 +793,9 @@ def seller_orders():
             SELECT oi.id, oi.order_id, oi.product_id, oi.product_name, oi.quantity, oi.price, oi.subtotal,
                    oi.commission_amount, oi.seller_earning, oi.credited_at, oi.cost_price,
                    oi.discount_amount, oi.discount_by, oi.courier, oi.tracking_no, oi.shipped_at,
+                   oi.fulfil_status, oi.seller_approved_at, oi.sent_to_warehouse_at, oi.warehouse_received_at,
+                   oi.to_wh_courier, oi.to_wh_tracking, o.delivered_at,
+                   (SELECT rr.status FROM return_requests rr WHERE rr.order_id=o.id ORDER BY rr.id DESC LIMIT 1) AS return_status,
                    o.status, o.customer_name, o.phone, o.address, o.city, o.payment_method, o.created_at
             FROM order_items oi JOIN orders o ON o.id = oi.order_id
             WHERE oi.seller_id=%s ORDER BY oi.id DESC LIMIT 300
@@ -1122,6 +1170,14 @@ def admin_marketplace_settings():
         if v < 0:
             raise ApiError("Minimum withdrawal cannot be negative")
         updates["min_withdrawal"] = str(int(v) if v == v.to_integral() else v)
+    if "return_days" in d:
+        try:
+            v = int(d["return_days"])
+        except Exception:
+            raise ApiError("Return days must be a whole number")
+        if v < 0 or v > 60:
+            raise ApiError("Return days must be between 0 and 60")
+        updates["return_days"] = str(v)
     if "reviews_require_purchase" in d:
         updates["reviews_require_purchase"] = "true" if d["reviews_require_purchase"] in (True, "true", "1", 1) else "false"
     with db() as (conn, cur):
@@ -1715,6 +1771,8 @@ RESET_TABLES = [
     ("seller_transactions", "Seller wallet history"),
     ("withdrawals", "Withdrawal requests"),
     ("reviews", "Product reviews"),
+    ("return_requests", "Return requests"),
+    ("complaints", "Complaints"),
     ("order_items", "Order items"),
     ("orders", "Orders"),
     ("chat_messages", "Customer chat messages"),
@@ -1850,7 +1908,8 @@ def notify_seller_credentials(email, owner, store, password):
 
 def notify_order_status(order_id, status):
     """Email the customer about important order changes. Safe to call after the order transaction."""
-    titles = {"approved": "Your order was approved", "shipped": "Your order has been shipped",
+    titles = {"approved": "The seller approved your order", "processing": "Your order reached the Zento warehouse",
+              "shipped": "Your order has been shipped",
               "out_for_delivery": "Your order is out for delivery", "delivered": "Your order was delivered",
               "cancelled": "Your order was cancelled", "returned": "Your return was accepted"}
     if status not in titles or not email_enabled():
@@ -1986,6 +2045,9 @@ def customer_cancel_order(oid):
             raise ApiError("Order not found", 404)
         if o["status"] not in ("pending", "approved"):
             raise ApiError("This order is already being prepared. Please contact support to cancel it.", 409)
+        cur.execute("SELECT 1 FROM order_items WHERE order_id=%s AND fulfil_status IN ('sent_to_warehouse','at_warehouse','with_courier') LIMIT 1", (oid,))
+        if cur.fetchone():
+            raise ApiError("The seller already sent your product to the Zento warehouse. Please contact support to cancel it.", 409)
         mp_reverse_order(cur, oid, "cancelled", text(d.get("reason"), 200) or "Cancelled by customer")
     notify_order_status(oid, "cancelled")
     return ok(message="Order cancelled")
@@ -2026,39 +2088,6 @@ def admin_refund_done(oid):
 # SELLER SHIPPING
 # ---------------------------------------------------------------------
 COURIERS = ("Pathao", "Steadfast", "RedX", "Paperfly", "eCourier", "Sundarban", "SA Paribahan", "Own delivery", "Other")
-
-
-@seller_bp.route("/api/seller/orders/<int:item_id>/ship", methods=["POST"])
-@api
-def seller_ship_item(item_id):
-    d = request.get_json(silent=True) or {}
-    courier = text(d.get("courier"), 40)
-    tracking = text(d.get("tracking_no"), 60)
-    if courier not in COURIERS:
-        raise ApiError("Choose a courier")
-    if len(tracking) < 3:
-        raise ApiError("Enter the tracking number (or a note for own delivery)")
-    current_user()
-    advanced = None
-    with db() as (conn, cur):
-        u, s = seller_required(cur)
-        cur.execute("""SELECT oi.id, oi.order_id, o.status FROM order_items oi JOIN orders o ON o.id=oi.order_id
-                       WHERE oi.id=%s AND oi.seller_id=%s FOR UPDATE OF oi""", (item_id, s["id"]))
-        row = cur.fetchone()
-        if not row:
-            raise ApiError("Order item not found", 404)
-        if row["status"] not in ("approved", "processing", "shipped"):
-            raise ApiError("You can ship an order after Zento has approved it")
-        cur.execute("""UPDATE order_items SET courier=%s, tracking_no=%s, shipped_at=COALESCE(shipped_at, NOW())
-                       WHERE id=%s""", (courier, tracking, item_id))
-        cur.execute("""SELECT COUNT(*) AS open FROM order_items
-                       WHERE order_id=%s AND (seller_id IS NULL OR shipped_at IS NULL)""", (row["order_id"],))
-        if cur.fetchone()["open"] == 0 and row["status"] in ("approved", "processing"):
-            cur.execute("UPDATE orders SET status='shipped', updated_at=NOW() WHERE id=%s", (row["order_id"],))
-            advanced = row["order_id"]
-    if advanced:
-        notify_order_status(advanced, "shipped")
-    return ok(message="Marked as shipped", couriers=COURIERS)
 
 
 # ---------------------------------------------------------------------
@@ -2144,6 +2173,407 @@ def store_page(slug):
 
 
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# ORDER FLOW: seller approves -> seller sends to Zento warehouse -> Zento receives
+#             -> Zento hands to courier -> delivered (money reaches the admin wallet)
+# ---------------------------------------------------------------------
+FULFIL_RANK = {"placed": 0, "seller_approved": 1, "sent_to_warehouse": 2, "at_warehouse": 3, "with_courier": 4}
+OPEN_ORDER = ("pending", "approved", "processing")
+
+
+def _item_rank(seller_id, status):
+    r = FULFIL_RANK.get(status or "placed", 0)
+    return max(r, 3) if seller_id is None else r        # Zento's own products are already in the warehouse
+
+
+def advance_order(cur, order_id):
+    """Moves the customer-facing order status forward when every item has reached the next stage.
+    Returns the new status (so the caller can email the customer) or None."""
+    c = cur.connection.cursor()
+    c.execute("SELECT status FROM orders WHERE id=%s FOR UPDATE", (order_id,))
+    row = c.fetchone()
+    if not row or row[0] not in ("pending", "approved", "processing"):
+        return None
+    c.execute("SELECT seller_id, fulfil_status FROM order_items WHERE order_id=%s", (order_id,))
+    ranks = [_item_rank(sid, st) for sid, st in c.fetchall()]
+    if not ranks:
+        return None
+    low = min(ranks)
+    target = "shipped" if low >= 4 else "processing" if low >= 3 else "approved" if low >= 1 else "pending"
+    order = ["pending", "approved", "processing", "shipped"]
+    if order.index(target) > order.index(row[0]):
+        c.execute("""UPDATE orders SET status=%s, approved_at=COALESCE(approved_at, NOW()), updated_at=NOW()
+                     WHERE id=%s""", (target, order_id))
+        return target
+    return None
+
+
+def mp_check_flow(cur, order_id, new_status):
+    """Called by the admin status buttons: the admin cannot skip the seller / warehouse steps."""
+    need = {"approved": 1, "processing": 3, "shipped": 3, "out_for_delivery": 3, "delivered": 3}.get(new_status)
+    if need is None:
+        return
+    c = cur.connection.cursor()
+    c.execute("SELECT seller_id, fulfil_status FROM order_items WHERE order_id=%s", (order_id,))
+    for sid, st in c.fetchall():
+        if _item_rank(sid, st) < need:
+            raise ApiError("The seller has not approved this order yet." if need == 1 else
+                           "The products have not reached the Zento warehouse yet. Receive them in Warehouse first.", 409)
+    if new_status in ("shipped", "out_for_delivery", "delivered"):
+        c.execute("""UPDATE order_items SET fulfil_status='with_courier', shipped_at=COALESCE(shipped_at, NOW())
+                     WHERE order_id=%s""", (order_id,))
+
+
+# ---- seller side -------------------------------------------------------
+def _seller_item(cur, s, item_id):
+    cur.execute("""SELECT oi.id, oi.order_id, oi.fulfil_status, o.status
+                   FROM order_items oi JOIN orders o ON o.id=oi.order_id
+                   WHERE oi.id=%s AND oi.seller_id=%s FOR UPDATE OF oi""", (item_id, s["id"]))
+    row = cur.fetchone()
+    if not row:
+        raise ApiError("Order item not found", 404)
+    if row["status"] not in OPEN_ORDER:
+        raise ApiError(f"This order is {row['status']}, nothing more to do", 409)
+    return row
+
+
+@seller_bp.route("/api/seller/orders/<int:item_id>/approve", methods=["POST"])
+@api
+def seller_approve_item(item_id):
+    current_user()
+    advanced = None
+    with db() as (conn, cur):
+        u, s = seller_required(cur)
+        row = _seller_item(cur, s, item_id)
+        if row["fulfil_status"] != "placed":
+            raise ApiError("You already approved this order", 409)
+        cur.execute("UPDATE order_items SET fulfil_status='seller_approved', seller_approved_at=NOW() WHERE id=%s", (item_id,))
+        advanced = advance_order(cur, row["order_id"])
+        oid = row["order_id"]
+    if advanced:
+        notify_order_status(oid, advanced)
+    return ok(message="Order approved. Now pack it and send it to the Zento warehouse.")
+
+
+def _send_to_warehouse(item_id, courier, tracking):
+    current_user()
+    with db() as (conn, cur):
+        u, s = seller_required(cur)
+        row = _seller_item(cur, s, item_id)
+        if row["fulfil_status"] == "placed":
+            raise ApiError("Approve the order first", 409)
+        if FULFIL_RANK.get(row["fulfil_status"], 0) >= 3:
+            raise ApiError("Zento already received this product", 409)
+        cur.execute("""UPDATE order_items SET fulfil_status='sent_to_warehouse',
+                              sent_to_warehouse_at=COALESCE(sent_to_warehouse_at, NOW()),
+                              to_wh_courier=%s, to_wh_tracking=%s WHERE id=%s""", (courier, tracking, item_id))
+    return ok(message="Marked as sent. Zento will confirm when the product arrives at the warehouse.")
+
+
+@seller_bp.route("/api/seller/orders/<int:item_id>/send-warehouse", methods=["POST"])
+@api
+def seller_send_warehouse(item_id):
+    d = request.get_json(silent=True) or {}
+    return _send_to_warehouse(item_id, text(d.get("courier"), 40), text(d.get("tracking_no"), 60))
+
+
+@seller_bp.route("/api/seller/orders/<int:item_id>/ship", methods=["POST"])
+@api
+def seller_ship_item(item_id):
+    # kept so older app versions still work: "ship" now means "send to the Zento warehouse"
+    d = request.get_json(silent=True) or {}
+    return _send_to_warehouse(item_id, text(d.get("courier"), 40), text(d.get("tracking_no"), 60))
+
+
+@seller_bp.route("/api/seller/complaints", methods=["GET"])
+@api
+def seller_complaints():
+    current_user()
+    with db() as (conn, cur):
+        u, s = seller_required(cur)
+        cur.execute("""SELECT c.id, c.order_id, c.subject, c.message, c.status, c.admin_note, c.created_at, us.name AS customer
+                       FROM complaints c JOIN users us ON us.id=c.user_id
+                       WHERE c.seller_id=%s ORDER BY c.id DESC LIMIT 100""", (s["id"],))
+        return ok(complaints=cur.fetchall())
+
+
+# ---- admin: warehouse --------------------------------------------------
+@bp.route("/api/admin/warehouse", methods=["GET"])
+@api
+def admin_warehouse():
+    admin_required()
+    with db() as (conn, cur):
+        cur.execute("""
+            SELECT o.id, o.customer_name, o.phone, o.address, o.city, o.payment_method, o.total, o.status,
+                   COALESCE(o.payment_trx_id,'') AS payment_trx_id, o.created_at
+            FROM orders o
+            WHERE o.status IN ('pending','approved','processing')
+              AND EXISTS (SELECT 1 FROM order_items x WHERE x.order_id=o.id AND x.seller_id IS NOT NULL
+                          AND x.fulfil_status IN ('seller_approved','sent_to_warehouse','at_warehouse'))
+            ORDER BY o.id DESC LIMIT 200""")
+        orders = cur.fetchall()
+        ids = [o["id"] for o in orders]
+        items = {}
+        if ids:
+            cur.execute("""SELECT oi.id, oi.order_id, oi.product_name, oi.quantity, oi.seller_id, oi.fulfil_status,
+                                  oi.sent_to_warehouse_at, oi.warehouse_received_at, oi.to_wh_courier, oi.to_wh_tracking,
+                                  COALESCE(s.store_name,'Zento') AS store_name
+                           FROM order_items oi LEFT JOIN sellers s ON s.id=oi.seller_id
+                           WHERE oi.order_id = ANY(%s) ORDER BY oi.id""", (ids,))
+            for it in cur.fetchall():
+                items.setdefault(it["order_id"], []).append(it)
+        for o in orders:
+            o["items"] = items.get(o["id"], [])
+            o["ready"] = all(_item_rank(i["seller_id"], i["fulfil_status"]) >= 3 for i in o["items"])
+        return ok(orders=orders, couriers=COURIERS)
+
+
+@bp.route("/api/admin/order-items/<int:item_id>/receive", methods=["POST"])
+@api
+def admin_receive_item(item_id):
+    admin = admin_required()
+    advanced = oid = None
+    with db() as (conn, cur):
+        cur.execute("""SELECT oi.id, oi.order_id, oi.fulfil_status, oi.product_name, o.status
+                       FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.id=%s FOR UPDATE OF oi""", (item_id,))
+        row = cur.fetchone()
+        if not row:
+            raise ApiError("Item not found", 404)
+        if row["status"] not in OPEN_ORDER:
+            raise ApiError(f"This order is {row['status']}", 409)
+        if row["fulfil_status"] not in ("seller_approved", "sent_to_warehouse"):
+            raise ApiError("The seller has not approved this item yet" if row["fulfil_status"] == "placed"
+                           else "This item is already in the warehouse", 409)
+        cur.execute("UPDATE order_items SET fulfil_status='at_warehouse', warehouse_received_at=NOW() WHERE id=%s", (item_id,))
+        advanced = advance_order(cur, row["order_id"])
+        oid = row["order_id"]
+        audit(cur, admin, "warehouse_received", "order", oid, row["product_name"])
+    if advanced:
+        notify_order_status(oid, advanced)
+    return ok(message="Received at the warehouse")
+
+
+@bp.route("/api/admin/orders/<int:oid>/handover", methods=["POST"])
+@api
+def admin_handover_order(oid):
+    admin = admin_required()
+    d = request.get_json(silent=True) or {}
+    courier = text(d.get("courier"), 40)
+    tracking = text(d.get("tracking_no"), 60)
+    if courier not in COURIERS:
+        raise ApiError("Choose a courier")
+    if len(tracking) < 3:
+        raise ApiError("Enter the courier tracking number")
+    with db() as (conn, cur):
+        cur.execute("SELECT status FROM orders WHERE id=%s FOR UPDATE", (oid,))
+        o = cur.fetchone()
+        if not o:
+            raise ApiError("Order not found", 404)
+        if o["status"] not in OPEN_ORDER:
+            raise ApiError(f"This order is {o['status']}", 409)
+        cur.execute("SELECT seller_id, fulfil_status FROM order_items WHERE order_id=%s", (oid,))
+        rows = cur.fetchall()
+        if any(_item_rank(r["seller_id"], r["fulfil_status"]) < 3 for r in rows):
+            raise ApiError("Some products have not reached the warehouse yet", 409)
+        cur.execute("""UPDATE order_items SET fulfil_status='with_courier', courier=%s, tracking_no=%s,
+                              shipped_at=COALESCE(shipped_at, NOW()),
+                              warehouse_received_at=COALESCE(warehouse_received_at, NOW())
+                       WHERE order_id=%s""", (courier, tracking, oid))
+        cur.execute("UPDATE orders SET status='shipped', approved_at=COALESCE(approved_at, NOW()), updated_at=NOW() WHERE id=%s", (oid,))
+        audit(cur, admin, "handed_to_courier", "order", oid, f"{courier} {tracking}")
+    notify_order_status(oid, "shipped")
+    return ok(message=f"Order #{oid} handed to {courier}")
+
+
+# ---- customer: return request + complaint ------------------------------
+def _return_days(cur):
+    try:
+        return max(0, int(get_settings(cur).get("return_days", "7")))
+    except Exception:
+        return 7
+
+
+@bp.route("/api/orders/<int:oid>/return-request", methods=["POST"])
+@api
+def customer_return_request(oid):
+    u = current_user()
+    d = request.get_json(silent=True) or {}
+    reason = text(d.get("reason"), 500)
+    if len(reason) < 5:
+        raise ApiError("Please tell us why you want to return it")
+    with db() as (conn, cur):
+        cur.execute("""SELECT status, user_id, COALESCE(delivered_at, updated_at) AS delivered
+                       FROM orders WHERE id=%s FOR UPDATE""", (oid,))
+        o = cur.fetchone()
+        if not o or o["user_id"] != u["user_id"]:
+            raise ApiError("Order not found", 404)
+        if o["status"] != "delivered":
+            raise ApiError("Only a delivered order can be returned", 409)
+        days = _return_days(cur)
+        cur.execute("SELECT NOW() - %s::timestamptz > make_interval(days => %s) AS late", (o["delivered"], days))
+        if cur.fetchone()["late"]:
+            raise ApiError(f"The {days}-day return period is over for this order", 409)
+        cur.execute("SELECT 1 FROM return_requests WHERE order_id=%s", (oid,))
+        if cur.fetchone():
+            raise ApiError("You already sent a return request for this order", 409)
+        cur.execute("INSERT INTO return_requests (order_id, user_id, reason) VALUES (%s,%s,%s)", (oid, u["user_id"], reason))
+    return ok(message="Return request sent. Our team will contact you soon.")
+
+
+@bp.route("/api/orders/<int:oid>/complaints", methods=["POST"])
+@api
+def customer_complaint(oid):
+    u = current_user()
+    d = request.get_json(silent=True) or {}
+    message = text(d.get("message"), 1500)
+    subject = text(d.get("subject"), 100)
+    try:
+        seller_id = int(d.get("seller_id"))
+    except Exception:
+        raise ApiError("Choose the seller")
+    if len(message) < 10:
+        raise ApiError("Please describe the problem (at least 10 letters)")
+    with db() as (conn, cur):
+        cur.execute("SELECT user_id FROM orders WHERE id=%s", (oid,))
+        o = cur.fetchone()
+        if not o or o["user_id"] != u["user_id"]:
+            raise ApiError("Order not found", 404)
+        cur.execute("SELECT 1 FROM order_items WHERE order_id=%s AND seller_id=%s LIMIT 1", (oid, seller_id))
+        if not cur.fetchone():
+            raise ApiError("This seller is not part of this order", 400)
+        cur.execute("SELECT COUNT(*) AS n FROM complaints WHERE user_id=%s AND order_id=%s AND seller_id=%s AND status='open'",
+                    (u["user_id"], oid, seller_id))
+        if cur.fetchone()["n"] >= 3:
+            raise ApiError("You already have open complaints about this seller for this order. Please wait for our reply.", 429)
+        cur.execute("INSERT INTO complaints (user_id, order_id, seller_id, subject, message) VALUES (%s,%s,%s,%s,%s)",
+                    (u["user_id"], oid, seller_id, subject or "Problem with seller", message))
+    return ok(message="Complaint sent. Zento will look into it and reply.")
+
+
+def customer_order_extras(user_id, orders):
+    """Adds seller names, rating state, return and complaint info to the customer's order list."""
+    ids = [o["id"] for o in orders]
+    if not ids:
+        return
+    with db() as (conn, cur):
+        days = _return_days(cur)
+        cur.execute("""SELECT oi.order_id, oi.seller_id, oi.fulfil_status, s.store_name, s.slug
+                       FROM order_items oi LEFT JOIN sellers s ON s.id=oi.seller_id
+                       WHERE oi.order_id = ANY(%s) ORDER BY oi.id ASC""", (ids,))
+        by_order = {}
+        for r in cur.fetchall():
+            by_order.setdefault(r["order_id"], []).append(r)
+        cur.execute("SELECT DISTINCT product_id FROM reviews WHERE user_id=%s", (user_id,))
+        reviewed = {r["product_id"] for r in cur.fetchall()}
+        cur.execute("""SELECT DISTINCT ON (order_id) order_id, status, reason, admin_note
+                       FROM return_requests WHERE order_id = ANY(%s) ORDER BY order_id, id DESC""", (ids,))
+        returns = {r["order_id"]: r for r in cur.fetchall()}
+        cur.execute("SELECT order_id, seller_id, status FROM complaints WHERE user_id=%s AND order_id = ANY(%s)", (user_id, ids))
+        complaints = {}
+        for r in cur.fetchall():
+            complaints.setdefault(r["order_id"], []).append({"seller_id": r["seller_id"], "status": r["status"]})
+        cur.execute("""SELECT id, (NOW() - COALESCE(delivered_at, updated_at) <= make_interval(days => %s)) AS in_window
+                       FROM orders WHERE id = ANY(%s)""", (days, ids))
+        window = {r["id"]: r["in_window"] for r in cur.fetchall()}
+    for o in orders:
+        rows = by_order.get(o["id"], [])
+        for i, it in enumerate(o.get("items", [])):
+            r = rows[i] if i < len(rows) else {}
+            it["seller_id"] = r.get("seller_id")
+            it["seller_name"] = r.get("store_name") or ""
+            it["seller_slug"] = r.get("slug") or ""
+            it["fulfil_status"] = r.get("fulfil_status") or "placed"
+            it["reviewed"] = it.get("product_id") in reviewed
+        o["return_request"] = returns.get(o["id"])
+        o["return_days"] = days
+        o["can_return"] = o["status"] == "delivered" and o["id"] not in returns and bool(window.get(o["id"]))
+        o["complaints"] = complaints.get(o["id"], [])
+
+
+# ---- admin: returns + complaints ---------------------------------------
+@bp.route("/api/admin/returns", methods=["GET"])
+@api
+def admin_returns():
+    admin_required()
+    status = request.args.get("status", "")
+    with db() as (conn, cur):
+        cur.execute("""
+            SELECT rr.id, rr.order_id, rr.reason, rr.status, rr.admin_note, rr.created_at, rr.resolved_at,
+                   o.customer_name, o.phone, o.total, o.delivery_fee, o.payment_method, u.email,
+                   (SELECT string_agg(DISTINCT COALESCE(s.store_name,'Zento'), ', ')
+                      FROM order_items oi LEFT JOIN sellers s ON s.id=oi.seller_id WHERE oi.order_id=o.id) AS sellers,
+                   (SELECT string_agg(oi.product_name || ' x' || oi.quantity, ', ')
+                      FROM order_items oi WHERE oi.order_id=o.id) AS items
+            FROM return_requests rr JOIN orders o ON o.id=rr.order_id JOIN users u ON u.id=rr.user_id
+            WHERE (%s = '' OR rr.status = %s) ORDER BY rr.id DESC LIMIT 200""", (status, status))
+        return ok(returns=cur.fetchall())
+
+
+@bp.route("/api/admin/returns/<int:rid>/<action>", methods=["POST"])
+@api
+def admin_return_action(rid, action):
+    admin = admin_required()
+    d = request.get_json(silent=True) or {}
+    note = text(d.get("note"), 300)
+    if action not in ("approve", "reject"):
+        raise ApiError("Unknown action", 404)
+    if action == "reject" and len(note) < 3:
+        raise ApiError("Write the reason so the customer understands")
+    order_id = None
+    with db() as (conn, cur):
+        cur.execute("SELECT id, order_id, status, reason FROM return_requests WHERE id=%s FOR UPDATE", (rid,))
+        r = cur.fetchone()
+        if not r:
+            raise ApiError("Request not found", 404)
+        if r["status"] != "requested":
+            raise ApiError("This request was already handled", 409)
+        order_id = r["order_id"]
+        if action == "approve":
+            # the sale is taken back from the SELLER(s); the delivery charge is charged to them too
+            mp_reverse_order(cur, order_id, "returned", "Customer return: " + r["reason"])
+        cur.execute("""UPDATE return_requests SET status=%s, admin_note=%s, resolved_at=NOW() WHERE id=%s""",
+                    ("approved" if action == "approve" else "rejected", note, rid))
+        audit(cur, admin, "return_" + action, "order", order_id, note)
+    if action == "approve":
+        notify_order_status(order_id, "returned")
+    return ok(message="Return accepted. The seller was charged and the refund is now due." if action == "approve"
+              else "Return request rejected")
+
+
+@bp.route("/api/admin/complaints", methods=["GET"])
+@api
+def admin_complaints():
+    admin_required()
+    status = request.args.get("status", "")
+    with db() as (conn, cur):
+        cur.execute("""
+            SELECT c.id, c.order_id, c.subject, c.message, c.status, c.admin_note, c.created_at,
+                   s.id AS seller_id, s.store_name, us.name AS customer, us.email, o.phone,
+                   (SELECT COUNT(*) FROM complaints x WHERE x.seller_id=c.seller_id) AS seller_total
+            FROM complaints c JOIN sellers s ON s.id=c.seller_id JOIN users us ON us.id=c.user_id
+            LEFT JOIN orders o ON o.id=c.order_id
+            WHERE (%s = '' OR c.status = %s) ORDER BY c.id DESC LIMIT 200""", (status, status))
+        return ok(complaints=cur.fetchall())
+
+
+@bp.route("/api/admin/complaints/<int:cid>/resolve", methods=["POST"])
+@api
+def admin_complaint_resolve(cid):
+    admin = admin_required()
+    d = request.get_json(silent=True) or {}
+    status = d.get("status") if d.get("status") in ("resolved", "dismissed") else "resolved"
+    note = text(d.get("note"), 300)
+    with db() as (conn, cur):
+        cur.execute("""UPDATE complaints SET status=%s, admin_note=%s, resolved_at=NOW()
+                       WHERE id=%s AND status='open' RETURNING id""", (status, note, cid))
+        if not cur.fetchone():
+            raise ApiError("Complaint not found or already closed", 404)
+        audit(cur, admin, "complaint_" + status, "complaint", cid, note)
+    return ok(message="Complaint closed")
+
+
+
+
 def init_marketplace(app, get_user, admin_user, base_dir, ensure_base=None):
     _H.update(get_user=get_user, admin_user=admin_user, base_dir=base_dir)
     try:

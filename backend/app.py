@@ -1786,6 +1786,11 @@ def get_orders():
         cursor.close()
         conn.close()
 
+        try:
+            _mp.customer_order_extras(user["user_id"], orders)
+        except Exception:
+            logging.getLogger("zento").exception("order extras failed")
+
         return {
             "status": "success",
             "orders": orders
@@ -2267,6 +2272,15 @@ def admin_update_order_status(order_id):
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cursor = conn.cursor()
 
+        # ZENTO_MARKETPLACE: the admin cannot skip the seller-approval / warehouse steps
+        try:
+            _mp.mp_check_flow(cursor, order_id, new_status)
+        except _mp.ApiError as flow_error:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return {"status": "error", "message": flow_error.message}, flow_error.code
+
         if new_status in ("cancelled", "returned"):
             # ZENTO_MARKETPLACE: stock, coupon, seller wallet and refund are handled together
             try:
@@ -2366,6 +2380,14 @@ def admin_approve_order(order_id):
 
         conn = psycopg2.connect(os.environ["DATABASE_URL"])
         cursor = conn.cursor()
+
+        try:
+            _mp.mp_check_flow(cursor, order_id, "approved")
+        except _mp.ApiError as flow_error:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return {"status": "error", "message": flow_error.message}, flow_error.code
 
         cursor.execute("""
             UPDATE orders
