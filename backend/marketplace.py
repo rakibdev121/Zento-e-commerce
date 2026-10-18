@@ -722,6 +722,7 @@ def seller_products():
     current_user()
     with db() as (conn, cur):
         u, s = seller_required(cur)
+        rate = commission_rate(cur)      # read BEFORE the main query: it reuses this cursor
         cur.execute(f"""
             SELECT p.id, p.name, p.description, p.price, p.image_url, p.category, p.stock, p.created_at, p.cost_price,
                    COALESCE(r.avg,0) AS rating_avg, COALESCE(r.cnt,0) AS rating_count
@@ -730,7 +731,6 @@ def seller_products():
                        FROM reviews GROUP BY product_id) r ON r.product_id = p.id
             WHERE p.seller_id=%s ORDER BY p.id DESC
         """, (s["id"],))
-        rate = commission_rate(cur)
         rows = cur.fetchall()
         for r in rows:
             r["profit_per_unit"] = unit_profit(r["price"], r["cost_price"], rate)
@@ -789,6 +789,7 @@ def seller_orders():
     current_user()
     with db() as (conn, cur):
         u, s = seller_required(cur)
+        rate = commission_rate(cur)      # read BEFORE the main query: it reuses this cursor
         cur.execute("""
             SELECT oi.id, oi.order_id, oi.product_id, oi.product_name, oi.quantity, oi.price, oi.subtotal,
                    oi.commission_amount, oi.seller_earning, oi.credited_at, oi.cost_price,
@@ -800,7 +801,6 @@ def seller_orders():
             FROM order_items oi JOIN orders o ON o.id = oi.order_id
             WHERE oi.seller_id=%s ORDER BY oi.id DESC LIMIT 300
         """, (s["id"],))
-        rate = commission_rate(cur)
         rows = cur.fetchall()
         for r in rows:
             r["profit"], r["profit_is_estimate"] = item_profit(r, rate)
