@@ -2154,14 +2154,21 @@ def seller_redirect():
     return redirect("/seller/", code=302)
 
 
+def _no_cache(resp):
+    # the seller panel changes often and runs inside an app WebView: never serve a stale copy
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
+
 @seller_bp.route("/seller/")
 def seller_page():
-    return send_from_directory(os.path.join(_H["base_dir"], "seller"), "index.html")
+    return _no_cache(send_from_directory(os.path.join(_H["base_dir"], "seller"), "index.html"))
 
 
 @seller_bp.route("/seller/<path:filename>")
 def seller_files(filename):
-    return send_from_directory(os.path.join(_H["base_dir"], "seller"), filename)
+    return _no_cache(send_from_directory(os.path.join(_H["base_dir"], "seller"), filename))
 
 
 @bp.route("/store/<slug>")
