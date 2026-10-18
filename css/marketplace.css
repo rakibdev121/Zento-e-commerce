@@ -47,3 +47,32 @@
 .order-ended{padding:12px;border-radius:10px;background:#fde8ea;color:#8a1d2a;font-size:13px}
 .item-tracking{display:block;margin-top:2px}
 .order-status.status-cancelled,.order-status.status-returned{background:#fde8ea;color:#c62839}
+
+/* ---------- orders: rate / return / complain ---------- */
+.item-seller{display:block;opacity:.8}
+.order-actions{margin-top:12px;padding-top:12px;border-top:1px solid rgba(128,128,128,.25);display:flex;flex-direction:column;gap:10px}
+.oa-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.oa-row small{opacity:.75}
+.oa-btn{border:1px solid #4a82ff;background:rgba(74,130,255,.12);color:#4a82ff;border-radius:999px;padding:7px 14px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.oa-btn.warn{border-color:#ff9f43;background:rgba(255,159,67,.14);color:#ff9f43}
+.oa-btn.ghost{border-color:rgba(128,128,128,.45);background:transparent;color:inherit;opacity:.9}
+.oa-done{font-size:13px;opacity:.8}
+.oa-note{font-size:13px;border-radius:10px;padding:8px 12px;background:rgba(74,130,255,.12)}
+.oa-note.bad{background:rgba(255,107,122,.15)}
+.zsheet-bg{position:fixed;inset:0;z-index:2000;background:rgba(5,10,25,.6);display:flex;align-items:flex-end;justify-content:center}
+.zsheet{background:#fff;color:#14203a;width:100%;max-width:480px;border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom,0px));max-height:90vh;overflow:auto}
+@media (min-width:600px){.zsheet-bg{align-items:center}.zsheet{border-radius:20px}}
+@media (prefers-color-scheme:dark){.zsheet{background:#131c30;color:#e8edf8}}
+.zsheet h3{margin:0 0 4px;font-size:18px}
+.zs-intro{margin:0 0 12px;font-size:13px;opacity:.75}
+.zsheet textarea,.zsheet input{width:100%;box-sizing:border-box;margin-top:8px;padding:11px 12px;border:1px solid rgba(128,128,128,.4);border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:16px}
+.zsheet textarea{min-height:100px;resize:vertical}
+.zs-stars{display:flex;gap:6px;justify-content:center;margin:6px 0}
+.zs-stars button{border:0;background:none;font-size:38px;line-height:1;color:rgba(128,128,128,.4);cursor:pointer;padding:0 2px}
+.zs-stars button.on{color:#f5a524}
+.zs-err{color:#e5484d;font-size:13px;min-height:18px;margin-top:8px}
+.zs-btns{display:flex;gap:10px;margin-top:6px}
+.zs-btns button{flex:1;border:0;border-radius:12px;padding:12px;font:inherit;font-weight:700;cursor:pointer}
+.zs-cancel{background:rgba(128,128,128,.18);color:inherit}
+.zs-ok{background:#2f62f2;color:#fff}
+.zs-ok:disabled{opacity:.6}
