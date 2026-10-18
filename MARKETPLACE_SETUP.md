@@ -109,3 +109,15 @@ Checkout-e customer jela select kore (dropdown). Server nijei fee hishab kore, t
 
 **Go live**: Admin > Settings > *Clear test data*. Test order, wallet history, withdrawal, review, chat, activity log muche jay; order number abar #1 theke shuru.
 Product, customer, seller, coupon, admin account thake. Type korte hoy: `DELETE TEST DATA`. Eta undo hoy na, age Supabase/Render DB backup nin.
+
+## Notun: Order flow, Return request, Complaint, Rating
+
+**Order flow (product-wise):** Customer order dey -> **Seller approve** kore -> seller product **Zento warehouse-e pathay** ("Send to Zento warehouse")
+-> Admin **Warehouse** page-e "Received" chape -> shob product eshe gele admin **"Hand to courier"** (courier + tracking) -> customer-er kache jay -> admin **Delivered** kore.
+Delivered hole-i customer-er taka admin wallet-e (pool) jhomma hoy, commission kete seller wallet-e baki taka jay.
+Admin seller-er approve ba warehouse step skip korte pare na (status button block kore). Customer-er order status auto-update hoy.
+Seller app-e (Orders tab) shob order-er full tracking dekha jay.
+
+**Customer (My orders):** delivered order-e product-e **Rate**, **Return this order** (delivery-r 7 din, Marketplace page-e din bodlano jay),
+ar order-e jei seller-er product ache tar naam diye **Complain about <seller>**.
+**Admin:** Return requests (Accept = seller-er taka kete neya hoy + delivery charge seller-ke dey; Reject = karon likhte hoy), Complaints (Resolve / Dismiss).
