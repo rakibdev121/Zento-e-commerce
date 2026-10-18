@@ -64,16 +64,16 @@ function busy(btn, on, label) { btn.disabled = on; if (label) btn.textContent = 
 function authShell(mode) {
   $("#tabs").hidden = true; $("#logoutBtn").hidden = true;
   app.innerHTML = `
-  <section class="card narrow">
-    <h1>Zento Seller Center</h1>
-    <p class="muted">Sell your products on Zento. Apply once, and our team will send you your login ID and password.</p>
+  <section class="card narrow authcard">
+    <div class="hero"><img src="/assets/zento-logo.png" alt="" onerror="this.style.display='none'"><div><h1>Zento Seller Center</h1>
+    <p class="muted">Manage your shop, orders and earnings in one place.</p></div></div>
     <div class="seg" role="tablist">
       <button type="button" data-m="login" class="${mode === "login" ? "on" : ""}">Seller login</button>
       <button type="button" data-m="apply" class="${mode === "apply" ? "on" : ""}">Apply as seller</button>
     </div>
     <div id="authBody"></div>
   </section>`;
-  app.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => authShell(b.dataset.m)));
+  app.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => (b.dataset.m === "apply" ? showApply() : showLogin())));
   return $("#authBody");
 }
 
@@ -269,11 +269,19 @@ function statusScreen(seller) {
 }
 
 /* ---------- dashboard ---------- */
-const TABS = [["overview", "Overview"], ["products", "Products"], ["orders", "Orders"], ["coupons", "Coupons"], ["wallet", "Wallet"], ["profile", "Store"]];
+const TABS = [["overview", "Home"], ["products", "Products"], ["orders", "Orders"], ["coupons", "Coupons"], ["wallet", "Wallet"], ["profile", "Store"]];
+const TAB_ICON = {
+  overview: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+  products: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
+  orders: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+  coupons: '<path d="M3 12l9-9h8v8l-9 9-8-8z"/><circle cx="15.5" cy="8.5" r="1.3"/>',
+  wallet: '<rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 10h18M16 15h2"/>',
+  profile: '<path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/>'
+};
 
 function buildTabs() {
   const t = $("#tabs"); t.hidden = false;
-  t.innerHTML = TABS.map(([k, l]) => `<button data-t="${k}"${k === S.tab ? ' aria-current="page"' : ""}>${l}</button>`).join("");
+  t.innerHTML = TABS.map(([k, l]) => `<button data-t="${k}"${k === S.tab ? ' aria-current="page"' : ""}><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${TAB_ICON[k]}</svg><span>${l}</span>${k === "orders" && S.todo ? `<i class="dot">${S.todo > 9 ? "9+" : S.todo}</i>` : ""}</button>`).join("");
   t.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => go(b.dataset.t)));
 }
 
@@ -281,9 +289,14 @@ async function go(tab) {
   S.tab = tab; location.hash = tab; buildTabs();
   app.innerHTML = `<div class="center muted">Loading...</div>`;
   try {
-    if (tab === "overview") { await loadMe(); viewOverview(); }
+    if (tab === "overview") {
+      await loadMe();
+      try { S.complaints = (await call("/api/seller/complaints")).complaints; } catch { S.complaints = []; }
+      try { S.orders = (await call("/api/seller/orders")).orders; countTodo(); buildTabs(); } catch {}
+      viewOverview();
+    }
     if (tab === "products") { await loadMe(); S.products = (await call("/api/seller/products")).products; viewProducts(); }
-    if (tab === "orders") { S.orders = (await call("/api/seller/orders")).orders; viewOrders(); }
+    if (tab === "orders") { S.orders = (await call("/api/seller/orders")).orders; countTodo(); buildTabs(); viewOrders(); }
     if (tab === "coupons") { S.coupons = (await call("/api/seller/coupons")).coupons; viewCoupons(); }
     if (tab === "wallet") { S.wallet = await call("/api/seller/wallet"); await loadMe(); viewWallet(); }
     if (tab === "profile") { await loadMe(); viewProfile(); }
@@ -308,11 +321,14 @@ function viewOverview() {
     <div class="stat"><small>Units sold</small><b>${m.units_sold}</b></div>
     <div class="stat"><small>Store rating</small><b><span class="stars">${stars(m.rating_avg)}</span> ${Number(m.rating_avg).toFixed(1)}</b><small>${m.rating_count} reviews</small></div>
   </div>
+  ${S.todo ? `<div class="card todo" style="margin-top:14px"><div><b>${S.todo} order${S.todo === 1 ? "" : "s"} need your action</b><div class="muted small">Approve new orders and send them to the Zento warehouse.</div></div><button class="btn sm" id="goOrders">Open orders</button></div>` : ""}
+  ${complaintsCard()}
   ${Number(m.products_missing_cost) > 0 ? `<div class="card warnbox" style="margin-top:14px"><b>${m.products_missing_cost} product(s) have no cost price.</b> Open Products and edit them to add the cost price, so your profit can be calculated.</div>` : ""}
   <div class="card" style="margin-top:14px"><h2>How you get paid</h2>
-    <p class="muted" style="margin:0">When an order with your product is marked <b>delivered</b>, Zento keeps ${w.commission_percent}% and the rest is added to your balance. Then request a withdrawal from the Wallet tab.</p>
+    <p class="muted" style="margin:0">You approve the order and send the product to the <b>Zento warehouse</b>. Zento hands it to the courier. When the order is <b>delivered</b>, Zento keeps ${w.commission_percent}% and the rest is added to your balance. Then request a withdrawal from the Wallet tab.</p>
     <p class="muted small" style="margin:8px 0 0"><b>Coupons:</b> if you give a discount with your own coupon, you pay that discount. If Zento gives a discount coupon, Zento pays it and you still get your full price.</p>
     <p class="muted small" style="margin:8px 0 0"><b>Returns:</b> if a customer returns a delivered order, it is the seller's responsibility. The money you earned is taken back and the delivery charge of that order (৳70 / ৳130) is charged to you. Zento does not carry the cost of returns.${Number(w.returns_charged) > 0 ? ` Return charges so far: <b>${money(w.returns_charged)}</b>.` : ""}</p></div>`;
+  const g = $("#goOrders"); if (g) g.addEventListener("click", () => go("orders"));
 }
 
 /* products */
@@ -399,44 +415,96 @@ function productModal(p) {
   });
 }
 
-/* orders */
-const pillFor = (s) => ({ delivered: "good", pending: "warn" }[s] || "info");
+/* orders: approve -> send to Zento warehouse -> Zento hands to courier -> delivered */
+const ZT = (id) => "#ZT-" + String(id).padStart(4, "0");
+const FSTEPS = ["Placed", "You approved", "Sent to Zento", "At warehouse", "With courier", "Delivered"];
+function orderStage(o) {
+  if (o.status === "cancelled" || o.status === "returned") return -1;
+  if (o.status === "delivered") return 5;
+  return { placed: 0, seller_approved: 1, sent_to_warehouse: 2, at_warehouse: 3, with_courier: 4 }[o.fulfil_status] ?? 0;
+}
+function orderBucket(o) { const s = orderStage(o); return s === -1 ? "closed" : s === 5 ? "done" : ["approve", "send", "zento", "zento", "way"][s]; }
+function countTodo() { S.todo = (S.orders || []).filter((o) => ["approve", "send"].includes(orderBucket(o))).length; }
+const stageName = { approve: "Needs your approval", send: "Send to Zento", zento: "At Zento", way: "On the way", done: "Delivered", closed: "Cancelled / returned" };
+const stagePill = { approve: "warn", send: "warn", zento: "info", way: "info", done: "good", closed: "bad" };
+
+function complaintsCard() {
+  const list = S.complaints || [];
+  if (!list.length) return "";
+  const open = list.filter((c) => c.status === "open").length;
+  return `<div class="card"><div class="toolbar" style="margin-bottom:6px"><h2 style="margin:0">Customer complaints ${open ? `<span class="pill bad">${open} open</span>` : ""}</h2></div>
+  <p class="muted small" style="margin:0 0 8px">Customers can complain about a seller from their order. Zento reviews each one.</p>
+  ${list.slice(0, 5).map((c) => `<div class="cmp"><div><b>${esc(c.subject || "Complaint")}</b> <span class="muted small">· ${ZT(c.order_id)} · ${when(c.created_at)}</span></div>
+    <div class="muted small">${esc(c.message)}</div>
+    <span class="pill ${c.status === "open" ? "warn" : c.status === "resolved" ? "good" : "info"}">${esc(c.status)}</span>${c.admin_note ? ` <span class="muted small">Zento: ${esc(c.admin_note)}</span>` : ""}</div>`).join("")}</div>`;
+}
+
+function stepper(o) {
+  const st = orderStage(o);
+  const times = [o.created_at, o.seller_approved_at, o.sent_to_warehouse_at, o.warehouse_received_at, o.shipped_at, o.delivered_at];
+  return `<ol class="steps">${FSTEPS.map((l, i) => `<li class="${i < st ? "done" : ""}${i === st ? " now" : ""}"><i>${i < st || (i === st && st === 5) ? "✓" : i + 1}</i><span>${l}</span><small>${i <= st && times[i] ? when(times[i]) : ""}</small></li>`).join("")}</ol>`;
+}
+
 function viewOrders() {
-  app.innerHTML = `<div class="toolbar"><h1>Orders</h1></div>
-  <div class="card"><div class="tscroll"><table><thead><tr><th>Order</th><th>Product</th><th>Qty</th><th>Sale</th><th>You earn</th><th>Profit</th><th>Status</th><th>Shipping</th><th>Customer</th></tr></thead><tbody>
-  ${S.orders.length ? S.orders.map((o) => `<tr>
-    <td><b>#ZT-${String(o.order_id).padStart(4, "0")}</b><br><span class="muted small">${when(o.created_at)}</span></td>
-    <td>${esc(o.product_name)}</td><td>${o.quantity}</td><td>${money(o.subtotal)}</td>
-    <td>${o.credited_at ? `<span class="amt-plus">${money(o.seller_earning)}</span><br><span class="muted small">−${money(o.commission_amount)} fee</span>` : '<span class="muted small">after delivery</span>'}</td>
-    <td>${o.profit == null ? '<span class="muted small">no cost</span>' : `<span class="${Number(o.profit) >= 0 ? "amt-plus" : "amt-minus"}">${money(o.profit)}</span>${o.profit_is_estimate ? '<br><span class="muted small">estimate</span>' : ""}<br><span class="muted small">cost ${money(o.cost_total)}</span>`}</td>
-    <td><span class="pill ${pillFor(o.status)}">${esc(String(o.status).replace(/_/g, " "))}</span></td>
-    <td>${o.tracking_no ? `<b>${esc(o.courier)}</b><br><span class="muted small">${esc(o.tracking_no)}</span>${["approved", "processing", "shipped"].includes(o.status) ? `<br><button class="btn ghost sm" data-ship="${o.id}">Edit</button>` : ""}`
-      : ["approved", "processing"].includes(o.status) ? `<button class="btn sm" data-ship="${o.id}">Mark shipped</button>`
-      : o.status === "pending" ? '<span class="muted small">After Zento approves</span>' : '<span class="muted small">-</span>'}</td>
-    <td>${esc(o.customer_name)}<br><span class="muted small">${esc(o.phone)}<br>${esc(o.address)}${o.city ? ", " + esc(o.city) : ""}</span></td></tr>`).join("")
-    : `<tr><td colspan="9" class="center muted">No orders yet.</td></tr>`}
-  </tbody></table></div></div>`;
-  app.querySelectorAll("[data-ship]").forEach((b) => b.addEventListener("click", () => shipModal(S.orders.find((x) => x.id == b.dataset.ship))));
+  const all = S.orders || [];
+  const counts = { all: all.length };
+  Object.keys(stageName).forEach((k) => (counts[k] = all.filter((o) => orderBucket(o) === k).length));
+  if (!S.of) S.of = counts.approve ? "approve" : counts.send ? "send" : "all";
+  const chips = [["all", "All"], ...Object.entries(stageName)].map(([k, l]) => `<button class="chip${S.of === k ? " on" : ""}" data-f="${k}">${l}<b>${counts[k] || 0}</b></button>`).join("");
+  const list = all.filter((o) => S.of === "all" || orderBucket(o) === S.of);
+  app.innerHTML = `<div class="toolbar"><div><h1>Orders</h1><span class="muted small">Approve, send to the Zento warehouse, and follow every order until it is delivered.</span></div></div>
+  <div class="chips">${chips}</div>
+  ${list.length ? list.map(orderCard).join("") : `<div class="card center muted">No orders here.</div>`}`;
+  app.querySelectorAll("[data-f]").forEach((b) => b.addEventListener("click", () => { S.of = b.dataset.f; viewOrders(); }));
+  app.querySelectorAll("[data-approve]").forEach((b) => b.addEventListener("click", () => approveItem(b)));
+  app.querySelectorAll("[data-send]").forEach((b) => b.addEventListener("click", () => sendModal(S.orders.find((x) => x.id == b.dataset.send))));
+}
+
+function orderCard(o) {
+  const k = orderBucket(o), st = orderStage(o);
+  let info = "", act = "";
+  if (st === -1) info = `<div class="note bad">This order was ${esc(o.status)}.${o.status === "returned" ? " The delivery charge of this order was charged to your wallet." : ""}</div>`;
+  if (o.return_status === "requested") info += `<div class="note warn">The customer asked to return this order. Zento is reviewing the request.</div>`;
+  if (o.return_status === "approved" && st !== -1) info += `<div class="note bad">Return accepted by Zento. It is the seller's responsibility.</div>`;
+  if (st === 0) act = `<button class="btn" data-approve="${o.id}">Approve order</button><span class="muted small">Approve only if you have the product in stock.</span>`;
+  if (st === 1) act = `<button class="btn" data-send="${o.id}">Send to Zento warehouse</button><span class="muted small">Pack it and deliver it to the Zento warehouse, then tap here.</span>`;
+  if (st === 2) { info += `<div class="note info">Sent to Zento${o.to_wh_courier || o.to_wh_tracking ? ": " + esc([o.to_wh_courier, o.to_wh_tracking].filter(Boolean).join(" · ")) : ""}. Waiting for the warehouse to confirm.</div>`; act = `<button class="btn ghost sm" data-send="${o.id}">Edit sending info</button>`; }
+  if (st === 3) info += `<div class="note info">Received at the Zento warehouse. Zento will hand it to the courier.</div>`;
+  if (st === 4) info += `<div class="note info">With courier: <b>${esc(o.courier || "-")}</b>${o.tracking_no ? " · tracking <b>" + esc(o.tracking_no) + "</b>" : ""}</div>`;
+  const earn = o.credited_at ? `<span class="amt-plus">${money(o.seller_earning)}</span> <span class="muted small">after ${money(o.commission_amount)} fee</span>` : '<span class="muted small">paid after delivery</span>';
+  return `<article class="ocard">
+    <div class="otop"><div><b>${ZT(o.order_id)}</b> <span class="muted small">· ${when(o.created_at)}</span></div><span class="pill ${stagePill[k]}">${stageName[k]}</span></div>
+    <div class="oprod"><div><b>${esc(o.product_name)}</b> <span class="muted">× ${o.quantity}</span><div class="muted small">${esc(o.customer_name)}${o.city ? ", " + esc(o.city) : ""} · ${esc(String(o.payment_method || "").toUpperCase())}</div></div><div class="oamt">${money(o.subtotal)}</div></div>
+    ${st === -1 ? "" : stepper(o)}
+    ${info}
+    <div class="ofoot"><div class="muted small">You earn: ${earn}</div>${act ? `<div class="oact">${act}</div>` : ""}</div>
+  </article>`;
+}
+
+async function approveItem(btn) {
+  btn.disabled = true;
+  try { const r = await call(`/api/seller/orders/${btn.dataset.approve}/approve`, { method: "POST", body: "{}" }); toast(r.message); go("orders"); }
+  catch (err) { toast(err.message, "error"); btn.disabled = false; }
 }
 
 const COURIERS = ["Pathao", "Steadfast", "RedX", "Paperfly", "eCourier", "Sundarban", "SA Paribahan", "Own delivery", "Other"];
-function shipModal(o) {
-  const bg = openModal(`<h2>Ship: ${esc(o.product_name)} × ${o.quantity}</h2>
-  <p class="muted small" style="margin:0 0 6px">Order #ZT-${String(o.order_id).padStart(4, "0")} · ${esc(o.customer_name)}, ${esc(o.phone)}</p>
+function sendModal(o) {
+  const bg = openModal(`<h2>Send to Zento warehouse</h2>
+  <p class="muted small" style="margin:0 0 6px">${esc(o.product_name)} × ${o.quantity} · ${ZT(o.order_id)}</p>
   <form id="sf2">
-    <label>Courier<select id="shC">${COURIERS.map((c) => `<option${o.courier === c ? " selected" : ""}>${c}</option>`).join("")}</select></label>
-    <label>Tracking number <span class="muted small">(for own delivery write the rider name or phone)</span><input id="shT" maxlength="60" value="${esc(o.tracking_no || "")}" required></label>
+    <label>How are you sending it? <span class="muted small">(optional)</span><select id="shC"><option value="">Not needed</option>${COURIERS.map((c) => `<option${o.to_wh_courier === c ? " selected" : ""}>${c}</option>`).join("")}</select></label>
+    <label>Tracking number or rider phone <span class="muted small">(optional)</span><input id="shT" maxlength="60" value="${esc(o.to_wh_tracking || "")}"></label>
     <div class="err" id="shErr"></div>
-    <div style="display:flex;gap:10px;margin-top:12px"><button type="button" class="btn ghost" id="shCancel">Cancel</button><button class="btn" style="flex:1" type="submit">Save and mark shipped</button></div>
+    <div style="display:flex;gap:10px;margin-top:12px"><button type="button" class="btn ghost" id="shCancel">Cancel</button><button class="btn" style="flex:1" type="submit">Mark as sent</button></div>
   </form>`);
   $("#shCancel", bg).addEventListener("click", () => bg.remove());
   $("#sf2", bg).addEventListener("submit", async (e) => {
     e.preventDefault();
-    const btn = $("#sf2 button[type=submit]", bg); busy(btn, true, "Save and mark shipped");
+    const btn = $("#sf2 button[type=submit]", bg); busy(btn, true, "Mark as sent");
     try {
-      await call(`/api/seller/orders/${o.id}/ship`, { method: "POST", body: JSON.stringify({ courier: $("#shC", bg).value, tracking_no: $("#shT", bg).value }) });
-      bg.remove(); toast("Marked as shipped"); go("orders");
-    } catch (err) { $("#shErr", bg).textContent = err.message; busy(btn, false, "Save and mark shipped"); }
+      const r = await call(`/api/seller/orders/${o.id}/send-warehouse`, { method: "POST", body: JSON.stringify({ courier: $("#shC", bg).value, tracking_no: $("#shT", bg).value }) });
+      bg.remove(); toast(r.message); go("orders");
+    } catch (err) { $("#shErr", bg).textContent = err.message; busy(btn, false, "Mark as sent"); }
   });
 }
 
