@@ -719,6 +719,7 @@ async function mpLoadMarket() {
     <section class="card"><form class="form" id="mpSet" style="padding:16px">
       <label>Platform commission (%)<input id="mpComm" type="number" min="0" max="90" step="0.5" value="${esc(d.settings.commission_percent)}"></label>
       <label>Minimum withdrawal (৳)<input id="mpMin" type="number" min="0" step="1" value="${esc(d.settings.min_withdrawal)}"></label>
+      <label>Return period (days after delivery)<input id="mpRet" type="number" min="0" max="60" step="1" value="${esc(d.settings.return_days || 7)}"></label>
       <label class="full" style="flex-direction:row;align-items:center;gap:8px"><input id="mpReq" type="checkbox" style="width:auto"${d.settings.reviews_require_purchase === "true" ? " checked" : ""}> Only customers who received the product can review it</label>
       <div class="full"><button class="btn btn-primary" type="submit">Save settings</button> <small>New commission applies to future deliveries only.</small></div>
     </form></section>
@@ -730,15 +731,126 @@ async function mpLoadMarket() {
     $("#mpSet").addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
-        const r = await api("/api/admin/marketplace/settings", { method: "PUT", body: JSON.stringify({ commission_percent: $("#mpComm").value, min_withdrawal: $("#mpMin").value, reviews_require_purchase: $("#mpReq").checked }) });
+        const r = await api("/api/admin/marketplace/settings", { method: "PUT", body: JSON.stringify({ commission_percent: $("#mpComm").value, min_withdrawal: $("#mpMin").value, return_days: $("#mpRet").value, reviews_require_purchase: $("#mpReq").checked }) });
         toast(r.message);
       } catch (err) { toast(err.message, "error"); }
     });
   } catch (e) { box.innerHTML = `<section class="card"><div class="empty">${esc(e.message)}</div></section>`; }
 }
 
+
+/* ---------- Warehouse, return requests, complaints ---------- */
+Object.assign(I, {
+  warehouse: '<path d="M3 21V9l9-5 9 5v12"/><path d="M8 21v-7h8v7"/><path d="M3 21h18"/>',
+  returns: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/>',
+  complaint: '<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/>'
+});
+Object.assign(MP, { whFilter: "wait", retFilter: "requested", cmpFilter: "open", couriers: [] });
+const FUL = { placed: ["Waiting for seller", "warn"], seller_approved: ["Seller approved, not sent yet", "warn"], sent_to_warehouse: ["Sent by seller, on the way", "info"], at_warehouse: ["In warehouse", "good"], with_courier: ["With courier", "good"] };
+const mpSel = (id, cur, opts, label) => `<label class="field"><select id="${id}" aria-label="${label}">${opts.map(([v, l]) => `<option value="${v}"${v === cur ? " selected" : ""}>${l}</option>`).join("")}</select></label>`;
+const cardMsg = (m) => `<section class="card"><div class="empty">${esc(m)}</div></section>`;
+
+function vWarehouse() {
+  return head("Warehouse", "Receive seller products here, then hand each full order to a courier",
+    mpSel("whF", MP.whFilter, [["wait", "Waiting for products"], ["ready", "Ready for courier"], ["all", "All"]], "Filter")) + `<div id="mpBody">${cardMsg("Loading...")}</div>`;
+}
+async function mpLoadWarehouse() {
+  const box = $("#mpBody"); if (!box) return;
+  try {
+    const d = await api("/api/admin/warehouse");
+    if (!$("#mpBody")) return;
+    MP.couriers = d.couriers || [];
+    const list = d.orders.filter((o) => MP.whFilter === "all" || (MP.whFilter === "ready" ? o.ready : !o.ready));
+    box.innerHTML = list.length ? list.map((o) => `<section class="card card-pad" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
+        <div><b style="font-size:16px">${oid(o.id)}</b> <span class="pill ${o.ready ? "good" : "warn"}">${o.ready ? "Ready for courier" : "Waiting for products"}</span>
+          <div class="sub" style="margin-top:4px">${esc(o.customer_name)} · ${esc(o.phone)}<br>${esc(o.address)}, ${esc(o.city)}</div></div>
+        <div style="text-align:right"><b>${money(o.total)}</b><div class="sub">${esc(String(o.payment_method).toUpperCase())}${o.payment_trx_id ? `<br>TrxID <b>${esc(o.payment_trx_id)}</b>` : ""}</div></div>
+      </div>
+      <div class="tscroll"><table style="margin-top:10px"><tbody>${o.items.map((i) => { const f = FUL[i.seller_id == null ? "at_warehouse" : i.fulfil_status] || FUL.placed; return `<tr>
+        <td><b>${esc(i.product_name)}</b> × ${i.quantity}<br><small>From: ${esc(i.store_name)}</small></td>
+        <td><span class="pill ${f[1]}">${f[0]}</span>${i.to_wh_courier || i.to_wh_tracking ? `<br><small>${esc([i.to_wh_courier, i.to_wh_tracking].filter(Boolean).join(" · "))}</small>` : ""}</td>
+        <td style="text-align:right">${["seller_approved", "sent_to_warehouse"].includes(i.fulfil_status) && i.seller_id != null ? `<button class="btn btn-sm btn-primary" data-recv="${i.id}">Received</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>
+      ${o.ready ? `<div style="margin-top:12px"><button class="btn btn-primary" data-hand="${o.id}" data-name="${esc(o.customer_name)}">Hand to courier</button></div>` : ""}
+    </section>`).join("") : cardMsg(MP.whFilter === "ready" ? "No order is ready for a courier." : "Nothing is waiting. Orders show up here after a seller approves them.");
+  } catch (e) { box.innerHTML = cardMsg(e.message); }
+}
+function mpHandover(id, name) {
+  showModal(`<div class="modal-h"><h2>Hand ${oid(id)} to courier</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div>
+  <div class="modal-b"><p class="sub" style="margin-top:0">Parcel for <b>${esc(name)}</b>. Check the payment (bKash/Nagad TrxID) before you hand it over.</p><div class="form">
+    <label class="full">Courier<select id="hdC">${MP.couriers.map((c) => `<option>${esc(c)}</option>`).join("")}</select></label>
+    <label class="full">Tracking number<input id="hdT" maxlength="60" placeholder="Courier tracking / consignment ID"></label></div>
+    <p id="hdErr" style="color:#c62839;min-height:18px;margin:8px 0 0"></p></div>
+  <div class="modal-f"><button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" id="hdGo">Hand over</button></div>`);
+  $("#hdGo").addEventListener("click", async () => {
+    try { const r = await api(`/api/admin/orders/${id}/handover`, { method: "POST", body: JSON.stringify({ courier: $("#hdC").value, tracking_no: $("#hdT").value }) });
+      closeModal(); toast(r.message); mpLoadWarehouse(); loadAll(); } catch (e) { $("#hdErr").textContent = e.message; }
+  });
+}
+
+function vReturns() {
+  return head("Return requests", "Customers can ask to return a delivered order. An accepted return is charged to the seller.",
+    mpSel("retF", MP.retFilter, [["requested", "Waiting"], ["approved", "Accepted"], ["rejected", "Rejected"], ["", "All"]], "Filter")) + `
+  <section class="card table-card"><div class="tscroll"><table><thead><tr><th>Order</th><th>Customer</th><th>Products / sellers</th><th>Reason</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody id="mpBody"><tr><td colspan="6"><div class="empty">Loading...</div></td></tr></tbody></table></div></section>`;
+}
+async function mpLoadReturns() {
+  const body = $("#mpBody"); if (!body) return;
+  try {
+    const d = await api("/api/admin/returns" + (MP.retFilter ? `?status=${MP.retFilter}` : ""));
+    if (!$("#mpBody")) return;
+    body.innerHTML = d.returns.length ? d.returns.map((r) => `<tr>
+      <td><b>${oid(r.order_id)}</b><br><small>${dstr(r.created_at)}</small><br><b>${money(r.total)}</b></td>
+      <td>${esc(r.customer_name)}<br><small>${esc(r.phone)}<br>${esc(r.email)}</small></td>
+      <td>${esc(r.items)}<br><small>Seller: <b>${esc(r.sellers)}</b></small></td>
+      <td style="max-width:260px">${esc(r.reason)}</td>
+      <td><span class="pill ${r.status === "approved" ? "good" : r.status === "rejected" ? "bad" : "warn"}">${r.status === "approved" ? "accepted" : esc(r.status)}</span>${r.admin_note ? `<br><small>${esc(r.admin_note)}</small>` : ""}</td>
+      <td style="white-space:nowrap">${r.status === "requested" ? `<button class="btn btn-sm btn-primary" data-ret="approve" data-rid="${r.id}">Accept</button> <button class="btn btn-sm btn-ghost" data-ret="reject" data-rid="${r.id}">Reject</button>` : "-"}</td></tr>`).join("")
+      : `<tr><td colspan="6"><div class="empty">No return requests.</div></td></tr>`;
+  } catch (e) { body.innerHTML = `<tr><td colspan="6"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+function mpReturnAction(id, act) {
+  const run = async (note) => { try { const r = await api(`/api/admin/returns/${id}/${act}`, { method: "POST", body: JSON.stringify({ note }) }); toast(r.message); mpLoadReturns(); } catch (e) { toast(e.message, "error"); } };
+  if (act === "approve") return mpAsk("Accept this return", "The sale is taken back from the seller and the delivery charge is charged to the seller. The customer refund becomes due. Add a note (optional).", "Accept return", run);
+  return mpAsk("Reject this return", "Reason (the customer will see it)", "Reject", run);
+}
+
+function vComplaints() {
+  return head("Complaints", "Customers complain about a seller from their order",
+    mpSel("cmpF", MP.cmpFilter, [["open", "Open"], ["resolved", "Resolved"], ["dismissed", "Dismissed"], ["", "All"]], "Filter")) + `
+  <section class="card table-card"><div class="tscroll"><table><thead><tr><th>Seller</th><th>Customer</th><th>Complaint</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody id="mpBody"><tr><td colspan="5"><div class="empty">Loading...</div></td></tr></tbody></table></div></section>`;
+}
+async function mpLoadComplaints() {
+  const body = $("#mpBody"); if (!body) return;
+  try {
+    const d = await api("/api/admin/complaints" + (MP.cmpFilter ? `?status=${MP.cmpFilter}` : ""));
+    if (!$("#mpBody")) return;
+    body.innerHTML = d.complaints.length ? d.complaints.map((c) => `<tr>
+      <td><b>${esc(c.store_name)}</b><br><small>${c.seller_total} complaint${Number(c.seller_total) === 1 ? "" : "s"} in total</small></td>
+      <td>${esc(c.customer)}<br><small>${esc(c.phone || "")}<br>${esc(c.email)}</small></td>
+      <td style="max-width:320px"><b>${esc(c.subject)}</b> <small>· ${c.order_id ? oid(c.order_id) : ""} · ${dstr(c.created_at)}</small><br>${esc(c.message)}</td>
+      <td><span class="pill ${c.status === "open" ? "warn" : c.status === "resolved" ? "good" : "info"}">${esc(c.status)}</span>${c.admin_note ? `<br><small>${esc(c.admin_note)}</small>` : ""}</td>
+      <td style="white-space:nowrap">${c.status === "open" ? `<button class="btn btn-sm btn-primary" data-cmp="resolved" data-cid="${c.id}">Resolve</button> <button class="btn btn-sm btn-ghost" data-cmp="dismissed" data-cid="${c.id}">Dismiss</button>` : "-"}</td></tr>`).join("")
+      : `<tr><td colspan="5"><div class="empty">No complaints.</div></td></tr>`;
+  } catch (e) { body.innerHTML = `<tr><td colspan="5"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+document.addEventListener("click", (e) => {
+  const rc = e.target.closest("[data-recv]");
+  if (rc) { rc.disabled = true; api(`/api/admin/order-items/${rc.dataset.recv}/receive`, { method: "POST", body: "{}" }).then((r) => { toast(r.message); mpLoadWarehouse(); loadAll(); }).catch((err) => { toast(err.message, "error"); rc.disabled = false; }); return; }
+  const h = e.target.closest("[data-hand]"); if (h) return mpHandover(h.dataset.hand, h.dataset.name);
+  const rt = e.target.closest("[data-ret]"); if (rt) return mpReturnAction(rt.dataset.rid, rt.dataset.ret);
+  const cm = e.target.closest("[data-cmp]");
+  if (cm) mpAsk(cm.dataset.cmp === "resolved" ? "Resolve complaint" : "Dismiss complaint", "Note for the record (optional)", "Save", async (note) => {
+    try { const r = await api(`/api/admin/complaints/${cm.dataset.cid}/resolve`, { method: "POST", body: JSON.stringify({ status: cm.dataset.cmp, note }) }); toast(r.message); mpLoadComplaints(); } catch (err) { toast(err.message, "error"); }
+  });
+});
+
 function mpWire(k) {
-  if (!["sellers", "withdrawals", "marketplace", "applications", "coupons", "audit", "wallet"].includes(k)) return;
+  if (!["sellers", "withdrawals", "marketplace", "applications", "coupons", "audit", "wallet", "warehouse", "returns", "complaints"].includes(k)) return;
+  if (k === "warehouse") { mpLoadWarehouse(); const f = $("#whF"); if (f) f.addEventListener("change", (e) => { MP.whFilter = e.target.value; mpLoadWarehouse(); }); }
+  if (k === "returns") { mpLoadReturns(); const f = $("#retF"); if (f) f.addEventListener("change", (e) => { MP.retFilter = e.target.value; mpLoadReturns(); }); }
+  if (k === "complaints") { mpLoadComplaints(); const f = $("#cmpF"); if (f) f.addEventListener("change", (e) => { MP.cmpFilter = e.target.value; mpLoadComplaints(); }); }
   if (k === "audit") mpLoadAudit();
   if (k === "wallet") { mpLoadWallet(); const f = $("#wlFilter"); if (f) f.addEventListener("change", (e) => { MP.walletFilter = e.target.value; mpLoadWallet(); }); const t = $("#wlTake"); if (t) t.addEventListener("click", mpWalletTake); }
   if (k === "coupons") { mpLoadCoupons(); const b = $("#cpNew"); if (b) b.addEventListener("click", () => mpCouponForm()); }
@@ -774,9 +886,12 @@ const ROUTES = {
   wallet: { t: "Wallet", i: "wallet", v: vWallet },
   audit: { t: "Activity log", i: "analytics", v: vAudit },
   coupons: { t: "Coupons", i: "star", v: vCoupons },
-  marketplace: { t: "Marketplace", i: "star", v: vMarket }
+  marketplace: { t: "Marketplace", i: "star", v: vMarket },
+  warehouse: { t: "Warehouse", i: "warehouse", v: vWarehouse },
+  returns: { t: "Return requests", i: "returns", v: vReturns },
+  complaints: { t: "Complaints", i: "complaint", v: vComplaints }
 };
-const MAIN = ["dashboard", "products", "orders", "messages", "customers", "applications", "sellers", "withdrawals", "wallet", "coupons", "marketplace", "audit", "analytics"];
+const MAIN = ["dashboard", "products", "orders", "warehouse", "returns", "complaints", "messages", "customers", "applications", "sellers", "withdrawals", "wallet", "coupons", "marketplace", "audit", "analytics"];
 const REPORTS = ["lowstock", "recent", "revenue"];
 const curRoute = () => { const k = (location.hash || "#dashboard").slice(1); return ROUTES[k] ? k : "dashboard"; };
 
