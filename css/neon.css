@@ -53,7 +53,7 @@ h1,h2,h3,.logo-text b,.auth-card h1,.auth-aside h2,.price strong{font-family:var
 body.auth-active .topbar{display:none}
 
 /* ---------- header ---------- */
-.header{background:rgba(11,15,20,.96);backdrop-filter:blur(10px);border-bottom:1px solid #16212b;color:#e5e7eb}
+.header{background:rgba(11,15,20,.96);border-bottom:1px solid #16212b;color:#e5e7eb}
 .logo-text b{color:#fff;letter-spacing:.04em;text-transform:uppercase;font-weight:700}
 .logo-text small{color:var(--neon);letter-spacing:.12em}
 .logo-icon{background:#fff}
