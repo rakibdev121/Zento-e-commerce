@@ -466,7 +466,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     const cityNow = document.getElementById("checkoutCity")?.value || "";
-    const delivery = cityNow && window.ZentoDelivery ? window.ZentoDelivery.fee(cityNow) : 0;
+    const delivery = cityNow && window.ZentoDelivery && !coupon.freeShip ? window.ZentoDelivery.fee(cityNow) : 0;
     const discount = Math.min(coupon.discount, subtotal);
     const total = subtotal - discount + delivery;
 
@@ -478,8 +478,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const discRow = document.getElementById("couponDiscountRow");
     const discEl = document.getElementById("checkoutDiscount");
     const discLabel = document.getElementById("couponDiscountLabel");
-    if (discRow) discRow.hidden = !(coupon.code && discount > 0);
-    if (discEl) discEl.textContent = "-" + money(discount);
+    if (discRow) discRow.hidden = !(coupon.code && (discount > 0 || coupon.freeShip));
+    if (discEl) discEl.textContent = discount > 0 ? "-" + money(discount) : "Free delivery";
     if (discLabel) discLabel.textContent = coupon.code ? `Coupon (${coupon.code})` : "Coupon discount";
   }
 
@@ -490,7 +490,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* ---------- coupon code ---------- */
 
-  const coupon = { code: "", discount: 0 };
+  const coupon = { code: "", discount: 0, freeShip: false };
   let couponTimer = null;
 
   function setCouponMsg(text, ok) {
@@ -503,7 +503,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function checkCoupon(code, quiet) {
     const cart = getCart();
     if (!code || !cart.length) {
-      coupon.code = ""; coupon.discount = 0;
+      coupon.code = ""; coupon.discount = 0; coupon.freeShip = false;
       renderCheckout();
       return;
     }
@@ -514,9 +514,10 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       coupon.code = data.code;
       coupon.discount = Number(data.discount) || 0;
-      setCouponMsg(`${data.code} applied. You save ${money(coupon.discount)}.`, true);
+      coupon.freeShip = !!data.free_shipping;
+      setCouponMsg(coupon.freeShip && !coupon.discount ? `${data.code} applied. Delivery is free!` : `${data.code} applied. You save ${money(coupon.discount)}.`, true);
     } catch (error) {
-      coupon.code = ""; coupon.discount = 0;
+      coupon.code = ""; coupon.discount = 0; coupon.freeShip = false;
       setCouponMsg(error.message, false);
     }
     renderCheckout();
@@ -548,7 +549,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const cart = getCart();
     const subtotal = cart.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0), 0);
     const cityNow = document.getElementById("checkoutCity")?.value || "";
-    const deliveryNow = cityNow && window.ZentoDelivery ? window.ZentoDelivery.fee(cityNow) : 0;
+    const deliveryNow = cityNow && window.ZentoDelivery && !coupon.freeShip ? window.ZentoDelivery.fee(cityNow) : 0;
     return subtotal - Math.min(coupon.discount, subtotal) + deliveryNow;
   }
 
@@ -777,7 +778,7 @@ document.addEventListener("DOMContentLoaded", () => {
         window.updateCartUI();
       }
 
-      coupon.code = ""; coupon.discount = 0;
+      coupon.code = ""; coupon.discount = 0; coupon.freeShip = false;
       const couponInput = document.getElementById("couponInput");
       if (couponInput) couponInput.value = "";
       setCouponMsg("", true);

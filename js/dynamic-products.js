@@ -37,7 +37,11 @@ async function loadZentoProducts() {
       const name = String(product.name ?? "");
       const description = String(product.description ?? "");
       const category = String(product.category ?? "General");
-      const price = Number(product.price) || 0;
+      const basePrice = Number(product.price) || 0;
+      const onSale = product.sale_price != null && Number(product.sale_price) < basePrice;
+      const price = onSale ? Number(product.sale_price) : basePrice;
+      const oldPrice = onSale ? basePrice : 0;
+      const salePercent = onSale ? Math.round(Number(product.sale_percent) || 0) : 0;
       const stock = Number(product.stock) || 0;
       const image = String(product.image_url ?? "");
 
@@ -58,6 +62,7 @@ async function loadZentoProducts() {
           data-name="${safeName}"
           data-category="${escapeZentoHtml(category.toLowerCase())}"
           data-price="${price}"
+          data-old-price="${oldPrice || ""}"
           data-description="${safeDescription}"
           data-image="${safeImage}"
           data-stock="${stock}"
@@ -65,8 +70,8 @@ async function loadZentoProducts() {
 
           <div class="product-top">
 
-            <span class="discount ${stock <= 0 ? "sold" : stock <= 5 ? "" : "none"}">
-              ${stock <= 0 ? "Sold out" : stock <= 5 ? `Only ${stock} left` : ""}
+            <span class="discount ${stock <= 0 ? "sold" : onSale ? "sale" : stock <= 5 ? "" : "none"}">
+              ${stock <= 0 ? "Sold out" : onSale ? `-${salePercent}%` : stock <= 5 ? `Only ${stock} left` : ""}
             </span>
 
             <button
@@ -105,12 +110,15 @@ async function loadZentoProducts() {
               ${escapeZentoHtml(stockText)}
             </div>
 
+            ${onSale ? `<div class="sale-line">⚡ Flash sale <span class="cd" data-cd="${escapeZentoHtml(String(product.sale_ends_at || ""))}"></span>${product.sale_left != null ? ` · ${Number(product.sale_left)} left` : ""}</div>` : ""}
+
             <div class="price-row">
 
               <div class="price">
                 <strong>
                   ৳${price.toFixed(2)}
                 </strong>
+                ${oldPrice ? `<del>৳${oldPrice.toFixed(2)}</del>` : ""}
               </div>
 
               <button

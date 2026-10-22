@@ -349,7 +349,7 @@ document.addEventListener("DOMContentLoaded", () => {
       product = {
         category: card.dataset.category || "General",
         price: Number(card.dataset.price) || 0,
-        oldPrice: null,
+        oldPrice: card.dataset.oldPrice ? Number(card.dataset.oldPrice) : null,
         rating: "New",
         reviews: "0",
         icon: "🛍️",
@@ -709,6 +709,16 @@ document.addEventListener("DOMContentLoaded", () => {
       filterProducts();
     });
 
+  function categoryIcon(label) {
+    const t = String(label || "").toLowerCase();
+    const map = [["earbud|headphone|audio|speaker|sound","🎧"],["charger|power|battery","🔌"],["cable|wire","🔗"],
+      ["watch|wearable|smart","⌚"],["phone|mobile","📱"],["case|accessor|cover","🎒"],["laptop|computer|pc","💻"],
+      ["camera|photo","📷"],["beauty|skin|care|cosmetic","🧴"],["fashion|cloth|wear|shirt","👕"],["home|kitchen|house","🏠"],
+      ["game|toy","🎮"],["food|grocery","🛒"],["book|stationery","📚"]];
+    for (const [keys, icon] of map) if (new RegExp(keys).test(t)) return icon;
+    return "🛍️";
+  }
+
   /* Build category chips from the products that really exist */
   function buildCategoryChips() {
 
@@ -735,9 +745,9 @@ document.addEventListener("DOMContentLoaded", () => {
       }[c]));
 
     wrap.innerHTML =
-      `<button class="category active" data-category="all" type="button"><span>All</span></button>` +
+      `<button class="category active" data-category="all" type="button"><i class="cat-ico">✨</i><span>All</span></button>` +
       [...seen].map(([key, label]) =>
-        `<button class="category" data-category="${safe(key)}" type="button"><span>${safe(label)}</span></button>`
+        `<button class="category" data-category="${safe(key)}" type="button"><i class="cat-ico">${categoryIcon(label)}</i><span>${safe(label)}</span></button>`
       ).join("");
 
     selectedCategory = "all";
