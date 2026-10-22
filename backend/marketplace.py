@@ -306,6 +306,11 @@ CREATE TABLE IF NOT EXISTS coupons (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS coupons_seller_idx ON coupons (seller_id);
+ALTER TABLE coupons ADD COLUMN IF NOT EXISTS user_id BIGINT;
+ALTER TABLE coupons ADD COLUMN IF NOT EXISTS product_id BIGINT;
+ALTER TABLE coupons ADD COLUMN IF NOT EXISTS free_shipping BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE coupons ADD COLUMN IF NOT EXISTS offer_id BIGINT;
+ALTER TABLE coupons ADD COLUMN IF NOT EXISTS label TEXT DEFAULT '';
 
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_id BIGINT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code TEXT DEFAULT '';
@@ -1355,6 +1360,20 @@ def _split_discount(total, amounts):
     return parts
 
 
+FLASH_HOOK = None   # set by offers.py: returns live flash sales for a list of product ids
+
+
+def flash_lookup(cur, product_ids):
+    """{product_id: {"offer_id", "percent", "remaining"}} for live flash sales ({} if offers are off)."""
+    if FLASH_HOOK is None or not product_ids:
+        return {}
+    try:
+        return FLASH_HOOK(cur, product_ids)
+    except Exception:
+        log.exception("flash sale lookup failed")
+        return {}
+
+
 def apply_coupon(cur, code, user_id, lines, consume=False):
     """
     lines: [{"id": product_id, "subtotal": number}, ...]
@@ -1371,6 +1390,8 @@ def apply_coupon(cur, code, user_id, lines, consume=False):
     if not c or not c["active"]:
         raise ApiError("This coupon code is not valid")
     if c["seller_id"] and c["seller_status"] != "approved":
+        raise ApiError("This coupon code is not valid")
+    if c.get("user_id") and c["user_id"] != user_id:      # personal reward coupon (mystery box, quiz ...)
         raise ApiError("This coupon code is not valid")
     now = datetime.datetime.now(datetime.timezone.utc)
     if c["starts_at"] and c["starts_at"] > now:
@@ -1389,7 +1410,13 @@ def apply_coupon(cur, code, user_id, lines, consume=False):
         d.execute("SELECT seller_id FROM products WHERE id=%s", (l["id"],))
         r = d.fetchone()
         rows.append((Decimal(str(l["subtotal"])), r["seller_id"] if r else None))
-    if c["seller_id"]:
+    if c.get("product_id"):                                # free product / product specific reward
+        idx = [i for i, l in enumerate(lines) if l["id"] == c["product_id"]]
+        if not idx:
+            d.execute("SELECT name FROM products WHERE id=%s", (c["product_id"],))
+            pr = d.fetchone()
+            raise ApiError("Add " + (pr["name"] if pr else "the reward product") + " to your cart to use this coupon")
+    elif c["seller_id"]:
         idx = [i for i, (_, sid) in enumerate(rows) if sid == c["seller_id"]]
         if not idx:
             raise ApiError(f"This coupon only works on products from {c['store_name']}")
@@ -1407,6 +1434,8 @@ def apply_coupon(cur, code, user_id, lines, consume=False):
             total = min(total, Decimal(c["max_discount"]))
     else:
         total = Decimal(c["value"])
+    if c.get("free_shipping") and Decimal(c["value"]) <= Decimal("0.01"):
+        total = Decimal("0")                               # free delivery coupon: no price discount
     total = min(q2(total), base)
 
     discounts = [Decimal("0")] * len(rows)
@@ -1417,7 +1446,7 @@ def apply_coupon(cur, code, user_id, lines, consume=False):
         d.execute("UPDATE coupons SET used_count=used_count+1 WHERE id=%s", (c["id"],))
     funded_by = "seller" if c["seller_id"] else "platform"
     return {"coupon": {"id": c["id"], "code": c["code"], "funded_by": funded_by,
-                       "store_name": c.get("store_name") or ""},
+                       "store_name": c.get("store_name") or "", "free_shipping": bool(c.get("free_shipping"))},
             "discount_total": total, "discounts": discounts}
 
 
@@ -1444,14 +1473,19 @@ def coupon_validate():
                 p = cur.fetchone()
             if not p:
                 continue
-            line = Decimal(p["price"]) * qty
+            unit = Decimal(p["price"])
+            fl = flash_lookup(cur, [p["id"]]).get(p["id"])
+            if fl:
+                unit = Decimal(str(round(float(unit) * (100 - fl["percent"]) / 100, 2)))
+            line = unit * qty
             lines.append({"id": p["id"], "subtotal": line})
             subtotal += line
         if not lines:
             raise ApiError("Your cart is empty")
         r = apply_coupon(cur, d.get("code"), u["user_id"], lines, consume=False)
     return ok(message=f"Coupon {r['coupon']['code']} applied", code=r["coupon"]["code"],
-              funded_by=r["coupon"]["funded_by"], discount=r["discount_total"], subtotal=subtotal)
+              funded_by=r["coupon"]["funded_by"], discount=r["discount_total"], subtotal=subtotal,
+              free_shipping=r["coupon"]["free_shipping"])
 
 
 def coupon_payload(d):
@@ -1571,7 +1605,7 @@ def seller_coupons():
         u, s = seller_required(cur)
         cur.execute(f"""SELECT {COUPON_COLS},
                         COALESCE((SELECT SUM(discount_amount) FROM order_items oi WHERE oi.coupon_id=coupons.id),0) AS discount_given
-                        FROM coupons WHERE seller_id=%s ORDER BY id DESC""", (s["id"],))
+                        FROM coupons WHERE seller_id=%s AND user_id IS NULL ORDER BY id DESC""", (s["id"],))
         return ok(coupons=cur.fetchall())
 
 
@@ -1614,7 +1648,7 @@ def admin_coupons():
     with db() as (conn, cur):
         cur.execute(f"""SELECT {COUPON_COLS}, (SELECT store_name FROM sellers s WHERE s.id=coupons.seller_id) AS store_name,
                         COALESCE((SELECT SUM(discount_amount) FROM order_items oi WHERE oi.coupon_id=coupons.id),0) AS discount_given
-                        FROM coupons ORDER BY (seller_id IS NULL) DESC, id DESC""")
+                        FROM coupons WHERE user_id IS NULL ORDER BY (seller_id IS NULL) DESC, id DESC""")
         return ok(coupons=cur.fetchall())
 
 

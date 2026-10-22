@@ -146,6 +146,7 @@ def get_products():
             ORDER BY p.id DESC
         """, (show_all,))
         rows = cursor.fetchall()
+        flash = _mp.flash_lookup(cursor, [row[0] for row in rows])
         cursor.close()
         conn.close()
 
@@ -168,6 +169,17 @@ def get_products():
             }
             for row in rows
         ]
+
+        # ZENTO_OFFERS: flash sale price, countdown and units left
+        for product in products:
+            sale = flash.get(product["id"])
+
+            if sale:
+                product["sale_percent"] = sale["percent"]
+                product["sale_price"] = round(product["price"] * (100 - sale["percent"]) / 100, 2)
+                product["sale_ends_at"] = sale["ends_at"].isoformat() if sale["ends_at"] else None
+                product["sale_left"] = sale["remaining"]
+                product["sale_title"] = sale["title"]
 
         return {"status": "success", "products": products}
 
@@ -1480,13 +1492,34 @@ def create_order():
                     "message": f"Not enough stock for {real_name}"
                 }, 400
 
-            line_total = float(real_price) * quantity
+            # ZENTO_OFFERS: live flash sale price (limit is counted atomically in this same transaction)
+            unit_price = float(real_price)
+            flash = _mp.flash_lookup(cursor, [real_id]).get(real_id)
+
+            if flash:
+                unit_price = round(unit_price * (100 - flash["percent"]) / 100, 2)
+                cursor.execute("""
+                    UPDATE offer_products SET sold = sold + %s
+                    WHERE offer_id = %s AND product_id = %s
+                      AND (qty_limit IS NULL OR sold + %s <= qty_limit)
+                """, (quantity, flash["offer_id"], real_id, quantity))
+
+                if cursor.rowcount == 0:
+                    conn.rollback()
+                    cursor.close()
+                    conn.close()
+                    return {
+                        "status": "error",
+                        "message": f"Only {flash['remaining']} left at the flash sale price for {real_name}"
+                    }, 400
+
+            line_total = unit_price * quantity
             subtotal += line_total
 
             clean_items.append({
                 "id": real_id,
                 "name": real_name,
-                "price": float(real_price),
+                "price": unit_price,
                 "quantity": quantity,
                 "subtotal": line_total
             })
@@ -1536,6 +1569,10 @@ def create_order():
 
             for item, share in zip(clean_items, coupon_info["discounts"]):
                 item["discount"] = float(share)
+
+            # ZENTO_OFFERS: free delivery reward (mystery box / free shipping day)
+            if coupon_info["coupon"].get("free_shipping"):
+                delivery_fee = 0
 
         total = subtotal - discount_total + delivery_fee
 
@@ -2619,4 +2656,26 @@ _mp.init_marketplace(
     admin_user=admin_user_from_request,
     base_dir=BASE_DIR,
     ensure_base=_mp_ensure_base
+)
+
+
+# =========================================================
+# ZENTO_OFFERS
+# Mystery box, flash sale, quiz, events, coupon drops, seller offers
+# =========================================================
+import sys as _sys
+
+_sys.modules["marketplace"] = _mp        # lets offers.py do `import marketplace`
+
+_of_spec = _ilu.spec_from_file_location(
+    "zento_offers",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "offers.py")
+)
+_of = _ilu.module_from_spec(_of_spec)
+_of_spec.loader.exec_module(_of)
+
+_of.init_offers(
+    app,
+    get_user=get_authenticated_user,
+    admin_user=admin_user_from_request
 )
