@@ -269,12 +269,13 @@ function statusScreen(seller) {
 }
 
 /* ---------- dashboard ---------- */
-const TABS = [["overview", "Home"], ["products", "Products"], ["orders", "Orders"], ["coupons", "Coupons"], ["wallet", "Wallet"], ["profile", "Store"]];
+const TABS = [["overview", "Home"], ["products", "Products"], ["orders", "Orders"], ["coupons", "Coupons"], ["offers", "Offers"], ["wallet", "Wallet"], ["profile", "Store"]];
 const TAB_ICON = {
   overview: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/>',
   products: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
   orders: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   coupons: '<path d="M3 12l9-9h8v8l-9 9-8-8z"/><circle cx="15.5" cy="8.5" r="1.3"/>',
+  offers: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v8h14v-8M12 8v12M12 8c-1.5-4-6-4-5 0 .6 1.6 3 1.2 5 0zM12 8c1.5-4 6-4 5 0-.6 1.6-3 1.2-5 0z"/>',
   wallet: '<rect x="3" y="6" width="18" height="14" rx="2.5"/><path d="M3 10h18M16 15h2"/>',
   profile: '<path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/>'
 };
@@ -297,6 +298,7 @@ async function go(tab) {
     }
     if (tab === "products") { await loadMe(); S.products = (await call("/api/seller/products")).products; viewProducts(); }
     if (tab === "orders") { S.orders = (await call("/api/seller/orders")).orders; countTodo(); buildTabs(); viewOrders(); }
+    if (tab === "offers") { S.products = (await call("/api/seller/products")).products; S.offers = (await call("/api/seller/offers")).offers; viewOffers(); }
     if (tab === "coupons") { S.coupons = (await call("/api/seller/coupons")).coupons; viewCoupons(); }
     if (tab === "wallet") { S.wallet = await call("/api/seller/wallet"); await loadMe(); viewWallet(); }
     if (tab === "profile") { await loadMe(); viewProfile(); }
@@ -505,6 +507,109 @@ function sendModal(o) {
       const r = await call(`/api/seller/orders/${o.id}/send-warehouse`, { method: "POST", body: JSON.stringify({ courier: $("#shC", bg).value, tracking_no: $("#shT", bg).value }) });
       bg.remove(); toast(r.message); go("orders");
     } catch (err) { $("#shErr", bg).textContent = err.message; busy(btn, false, "Mark as sent"); }
+  });
+}
+
+/* offers: mystery box, flash sale, quiz, coupon drop ... (the seller pays the discount, only on own products) */
+const SO_KINDS = {
+  mystery_box: ["🎁", "Mystery Box", "A box drops on the customer's screen. They tap it to win a random prize from you."],
+  spin_wheel: ["🎡", "Lucky Spin Wheel", "Customers spin for a random prize."],
+  scratch_card: ["🎟️", "Scratch Card", "Customers scratch a card for a random prize."],
+  quiz: ["🧠", "Quiz", "Ask a question. Right answer wins your prize."],
+  flash_sale: ["⚡", "Flash Sale", "Time limited sale price on your products with a countdown."],
+  event: ["📣", "Event banner", "Announce your campaign in the website's top slider."],
+  coupon_drop: ["🏷️", "Coupon Drop", "A coupon for your products, first N customers."],
+  spend_save: ["💸", "Spend and Save", "Spend X, save Y on your products."],
+  free_gift: ["🎀", "Free Gift Offer", "Give one of your products free above a minimum order."]
+};
+const SO_PRIZE = { percent: "Percent off", fixed: "Taka off", free_product: "Free product", nothing: "Nothing (better luck)" };
+const SO_PRIZE_KINDS = ["mystery_box", "spin_wheel", "scratch_card", "quiz", "coupon_drop", "spend_save", "free_gift"];
+const SO_MULTI = ["mystery_box", "spin_wheel", "scratch_card", "quiz"];
+const soLocal = (v) => { if (!v) return ""; const d = new Date(v); return isNaN(d) ? "" : d.toLocaleString("sv-SE", { timeZone: "Asia/Dhaka" }).replace(" ", "T").slice(0, 16); };
+
+function viewOffers() {
+  app.innerHTML = `<div class="toolbar"><h1>My offers</h1><button class="btn" id="addO">+ New offer</button></div>
+  <div class="card"><p class="muted small" style="margin:0">Give your customers a reason to buy. Rewards are personal coupons that work only on your products, and you pay the discount. Flash sales lower your product price for a short time.</p></div>
+  <div class="card" style="padding:0;overflow:auto"><table><thead><tr><th>Offer</th><th>When (Dhaka)</th><th>Results</th><th></th></tr></thead><tbody>
+  ${S.offers.length ? S.offers.map((o) => { const k = SO_KINDS[o.kind] || ["🎯", o.kind_label]; const s = o.stats || {}; return `<tr>
+    <td><b>${k[0]} ${esc(o.title)}</b><br><span class="muted small">${esc(k[1])} · ${o.live ? "Live" : o.active ? "Not live now" : "Off"}</span></td>
+    <td class="small">${o.starts_at ? soLocal(o.starts_at).replace("T", " ") : "Now"}<br>${o.ends_at ? soLocal(o.ends_at).replace("T", " ") : "No end"}</td>
+    <td class="small">${s.plays || 0} played · ${s.wins || 0} won<br>${s.redeemed || 0} used · ${money(s.discount_given || 0)} given</td>
+    <td style="white-space:nowrap"><button class="btn ghost sm" data-oedit="${o.id}">Edit</button> <button class="btn ghost sm" data-otog="${o.id}">${o.active ? "Turn off" : "Turn on"}</button> <button class="btn ghost sm" data-odel="${o.id}">Delete</button></td></tr>`; }).join("")
+    : `<tr><td colspan="4" class="center muted">No offers yet. Create a mystery box or a flash sale.</td></tr>`}</tbody></table></div>`;
+  $("#addO").addEventListener("click", soPick);
+  app.querySelectorAll("[data-oedit]").forEach((b) => b.addEventListener("click", () => soForm(S.offers.find((x) => x.id == b.dataset.oedit).kind, S.offers.find((x) => x.id == b.dataset.oedit))));
+  app.querySelectorAll("[data-otog]").forEach((b) => b.addEventListener("click", async () => {
+    const o = S.offers.find((x) => x.id == b.dataset.otog);
+    try { await call(`/api/seller/offers/${o.id}`, { method: "PUT", body: JSON.stringify({ active: !o.active }) }); go("offers"); } catch (e) { toast(e.message, "error"); }
+  }));
+  app.querySelectorAll("[data-odel]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm("Delete this offer?")) return;
+    try { const r = await call(`/api/seller/offers/${b.dataset.odel}`, { method: "DELETE" }); toast(r.message); go("offers"); } catch (e) { toast(e.message, "error"); }
+  }));
+}
+function soPick() {
+  const bg = openModal(`<h2>Choose an offer type</h2><div style="display:grid;gap:8px">${Object.entries(SO_KINDS).map(([k, v]) => `<button class="card" data-k="${k}" style="text-align:left;cursor:pointer;margin:0"><b>${v[0]} ${v[1]}</b><div class="muted small">${v[2]}</div></button>`).join("")}</div>`);
+  bg.querySelectorAll("[data-k]").forEach((b) => b.addEventListener("click", () => { bg.remove(); soForm(b.dataset.k); }));
+}
+const soProdOpts = (sel) => (S.products || []).map((x) => `<option value="${x.id}"${String(sel) === String(x.id) ? " selected" : ""}>${esc(x.name)} (${money(x.price)})</option>`).join("");
+function soPrizeRow(p = {}) {
+  return `<div class="card" data-prow style="margin:0 0 8px"><div class="row2">
+    <label>Prize name<input data-f="label" maxlength="60" value="${esc(p.label || "")}" placeholder="20% OFF"></label>
+    <label>Type<select data-f="prize_type">${Object.entries(SO_PRIZE).map(([k, v]) => `<option value="${k}"${p.prize_type === k ? " selected" : ""}>${v}</option>`).join("")}</select></label>
+    <label>Value (% or ৳)<input data-f="value" type="number" min="0" step="0.01" value="${p.value ?? ""}"></label>
+    <label>Max discount ৳<input data-f="max_discount" type="number" min="0" step="0.01" value="${p.max_discount ?? ""}" placeholder="optional"></label>
+    <label>Minimum order ৳<input data-f="min_order" type="number" min="0" step="0.01" value="${Number(p.min_order) || ""}"></label>
+    <label>Free product<select data-f="product_id"><option value="">-</option>${soProdOpts(p.product_id)}</select></label>
+    <label>Chance (weight)<input data-f="weight" type="number" min="0" value="${p.weight ?? 10}"></label>
+    <label>Stock<input data-f="stock" type="number" min="0" value="${p.stock ?? ""}" placeholder="unlimited"></label>
+    <label>Valid (days)<input data-f="valid_days" type="number" min="1" value="${p.valid_days ?? 7}"></label>
+    <input type="hidden" data-f="id" value="${p.id ?? ""}"></div><button type="button" class="btn ghost sm" data-prm>Remove prize</button></div>`;
+}
+function soSaleRow(p = {}) {
+  return `<div class="card" data-srow style="margin:0 0 8px"><label>Product<select data-f="product_id">${soProdOpts(p.product_id)}</select></label><div class="row2">
+    <label>Discount %<input data-f="discount_percent" type="number" min="1" max="99" step="0.5" value="${p.discount_percent ?? 20}"></label>
+    <label>Units at sale price<input data-f="qty_limit" type="number" min="1" value="${p.qty_limit ?? ""}" placeholder="unlimited"></label></div>
+    <button type="button" class="btn ghost sm" data-srm>Remove product</button></div>`;
+}
+function soForm(kind, o) {
+  const v = o || { active: true, show_banner: true, per_user_limit: 1, color: "#00e5c2", config: {}, prizes: [], products: [] };
+  const cfg = v.config || {}, k = SO_KINDS[kind], hasPrizes = SO_PRIZE_KINDS.includes(kind);
+  const prizes = v.prizes && v.prizes.length ? v.prizes : (hasPrizes ? [{ prize_type: "percent", value: 10, weight: 10 }] : []);
+  const bg = openModal(`<h2>${o ? "Edit" : "New"} ${k[0]} ${k[1]}</h2><p class="muted small">${k[2]}</p><form id="of">
+    <label>Title<input id="oTitle" maxlength="80" value="${esc(v.title || "")}" required></label>
+    <label>Short line (optional)<input id="oSub" maxlength="120" value="${esc(v.subtitle || "")}"></label>
+    <div class="row2"><label>Starts (Dhaka time)<input id="oStart" type="datetime-local" value="${soLocal(v.starts_at)}"></label><label>Ends (Dhaka time)<input id="oEnd" type="datetime-local" value="${soLocal(v.ends_at)}"></label></div>
+    <div class="row2"><label>Colour<input id="oColor" type="color" value="${esc(v.color || "#00e5c2")}"></label><label>Button text<input id="oCta" maxlength="24" value="${esc(v.cta_label || "")}"></label></div>
+    ${!["flash_sale", "event"].includes(kind) ? `<div class="row2"><label>Tries per customer<input id="oPer" type="number" min="1" value="${v.per_user_limit ?? 1}"></label><label>Total available<input id="oTotal" type="number" min="1" value="${v.total_limit ?? ""}" placeholder="unlimited"></label></div>` : ""}
+    <label style="flex-direction:row;display:flex;gap:8px;align-items:center"><input id="oBanner" type="checkbox" style="width:auto"${v.show_banner !== false ? " checked" : ""}> Show in the website's top slider</label>
+    ${kind === "mystery_box" ? `<div class="row2"><label>Appears after (sec)<input id="oDmin" type="number" min="3" value="${cfg.delay_min ?? 8}"></label><label>Appears before (sec)<input id="oDmax" type="number" min="3" value="${cfg.delay_max ?? 25}"></label></div>` : ""}
+    ${kind === "spend_save" || kind === "free_gift" ? `<label>Minimum order ৳<input id="oMin" type="number" min="0" value="${cfg.min_order ?? ""}"></label>` : ""}
+    ${kind === "quiz" ? `<label>Question<input id="oQ" maxlength="300" value="${esc(cfg.question || "")}"></label><label>Answer options (one per line)<textarea id="oOpts" rows="4">${esc((cfg.options || []).join("\n"))}</textarea></label>
+      <div class="row2"><label>Correct answer number<input id="oAns" type="number" min="1" value="${(cfg.answer_index ?? 0) + 1}"></label><label>Wrong answer message<input id="oWrong" maxlength="160" value="${esc(cfg.wrong_message || "")}"></label></div>` : ""}
+    ${hasPrizes ? `<h3>Prizes</h3><div id="oPrizes">${prizes.map(soPrizeRow).join("")}</div>${SO_MULTI.includes(kind) ? `<button type="button" class="btn ghost sm" id="oAddP">+ Add prize</button>` : ""}` : ""}
+    ${kind === "flash_sale" ? `<h3>Products on sale</h3><div id="oSale">${(v.products && v.products.length ? v.products : [{}]).map(soSaleRow).join("")}</div><button type="button" class="btn ghost sm" id="oAddS">+ Add product</button>` : ""}
+    <div class="err" id="oErr"></div>
+    <div style="display:flex;gap:10px;margin-top:12px"><button type="button" class="btn ghost" id="oCancel">Cancel</button><button class="btn" style="flex:1" type="submit">${o ? "Save" : "Create offer"}</button></div></form>`);
+  bg.querySelector(".modal").style.maxHeight = "88vh"; bg.querySelector(".modal").style.overflow = "auto";
+  $("#oCancel", bg).addEventListener("click", () => bg.remove());
+  const ap = $("#oAddP", bg); if (ap) ap.addEventListener("click", () => $("#oPrizes", bg).insertAdjacentHTML("beforeend", soPrizeRow({ prize_type: "percent", value: 10, weight: 10 })));
+  const as = $("#oAddS", bg); if (as) as.addEventListener("click", () => $("#oSale", bg).insertAdjacentHTML("beforeend", soSaleRow({})));
+  bg.addEventListener("click", (e) => { const a = e.target.closest("[data-prm]"); if (a) a.closest("[data-prow]").remove(); const b = e.target.closest("[data-srm]"); if (b) b.closest("[data-srow]").remove(); });
+  const rows = (sel, attr) => [...bg.querySelectorAll(`${sel} [${attr}]`)].map((r) => { const x = {}; r.querySelectorAll("[data-f]").forEach((el) => { x[el.dataset.f] = el.value; }); return x; });
+  $("#of", bg).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const g = (s) => { const el = $(s, bg); return el ? el.value : undefined; };
+    const body = { kind, title: g("#oTitle"), subtitle: g("#oSub"), starts_at: g("#oStart"), ends_at: g("#oEnd"), color: g("#oColor"), cta_label: g("#oCta"),
+      per_user_limit: g("#oPer"), total_limit: g("#oTotal"), show_banner: $("#oBanner", bg).checked, active: o ? o.active : true, config: {} };
+    if (kind === "mystery_box") body.config = { delay_min: g("#oDmin"), delay_max: g("#oDmax") };
+    if (kind === "spend_save" || kind === "free_gift") body.config = { min_order: g("#oMin") };
+    if (kind === "quiz") body.config = { question: g("#oQ"), options: (g("#oOpts") || "").split("\n").map((x) => x.trim()).filter(Boolean), answer_index: Number(g("#oAns") || 1) - 1, wrong_message: g("#oWrong") };
+    if (hasPrizes) body.prizes = rows("#oPrizes", "data-prow");
+    if (kind === "flash_sale") body.products = rows("#oSale", "data-srow");
+    const btn = $("#of button[type=submit]", bg); busy(btn, true, o ? "Save" : "Create offer");
+    try { const r = await call(o ? `/api/seller/offers/${o.id}` : "/api/seller/offers", { method: o ? "PUT" : "POST", body: JSON.stringify(body) }); bg.remove(); toast(r.message); go("offers"); }
+    catch (err) { $("#oErr", bg).textContent = err.message; busy(btn, false, o ? "Save" : "Create offer"); }
   });
 }
 
