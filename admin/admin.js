@@ -44,6 +44,7 @@ const I = {
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v8h14v-8M12 8v12M12 8c-1.5-4-6-4-5 0 .6 1.6 3 1.2 5 0zM12 8c1.5-4 6-4 5 0-.6 1.6-3 1.2-5 0z"/>',
   cal: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'
 };
 const ico = (k) => `<svg class="ico" viewBox="0 0 24 24">${I[k]}</svg>`;
@@ -593,10 +594,166 @@ async function mpCouponAction(id, act) {
   } catch (e) { toast(e.message, "error"); }
 }
 
+/* ---------- Offers (mystery box, flash sale, quiz, events, coupon drops ...) ---------- */
+const OF_KINDS = {
+  mystery_box: ["🎁", "Mystery Box", "A box drops on the customer's screen at a random moment. They tap to open it and win a random prize."],
+  spin_wheel: ["🎡", "Lucky Spin Wheel", "Customers spin a wheel for a random prize (same prize list as a mystery box)."],
+  scratch_card: ["🎟️", "Scratch Card", "Customers scratch a card to reveal a random prize."],
+  quiz: ["🧠", "Quiz", "A question with answer options. The right answer wins the prize."],
+  flash_sale: ["⚡", "Flash Sale", "Time limited sale price on chosen products, with a countdown and an optional unit limit."],
+  event: ["📣", "Event banner", "Festival or campaign message that slides across the top of the website."],
+  coupon_drop: ["🏷️", "Coupon Drop", "A coupon any customer can claim. Limit it to the first N customers."],
+  free_shipping: ["🚚", "Free Shipping Day", "Customers claim a free delivery coupon."],
+  spend_save: ["💸", "Spend and Save", "Spend X taka, save Y. Claimable coupon with a minimum order."],
+  welcome: ["👋", "Welcome Gift", "A gift for customers who have not placed any order yet."],
+  free_gift: ["🎀", "Free Gift Offer", "Give a free product when the cart reaches a minimum amount."],
+  lucky_draw: ["🏆", "Lucky Draw", "Customers enter, and you draw one random winner from the panel."]
+};
+const OF_PRIZE = { percent: "Percent off", fixed: "Taka off", free_product: "Free product", free_shipping: "Free delivery", nothing: "Nothing (better luck)" };
+const OF_PRIZE_KINDS = ["mystery_box", "spin_wheel", "scratch_card", "quiz", "coupon_drop", "spend_save", "welcome", "free_gift", "lucky_draw"];
+const OF_MULTI = ["mystery_box", "spin_wheel", "scratch_card", "quiz"];
+const ofLocal = (v) => { if (!v) return ""; const d = new Date(v); return isNaN(d) ? "" : d.toLocaleString("sv-SE", { timeZone: "Asia/Dhaka" }).replace(" ", "T").slice(0, 16); };
+const ofWhen = (o) => `${o.starts_at ? ofLocal(o.starts_at).replace("T", " ") : "Now"} → ${o.ends_at ? ofLocal(o.ends_at).replace("T", " ") : "No end"}`;
+let OF = { list: [], draft: null };
+
+function vOffers() {
+  return head("Offers", "Mystery boxes, flash sales, quizzes, events and more. Rewards are paid out as personal coupons, paid by Zento.", `<button class="btn btn-primary" id="ofNew">+ New offer</button>`) + `
+  <section class="card table-card"><div class="tscroll"><table><thead><tr><th>Offer</th><th>Owner</th><th>When (Dhaka)</th><th>Results</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody id="ofBody"><tr><td colspan="6"><div class="empty">Loading...</div></td></tr></tbody></table></div></section>`;
+}
+async function mpLoadOffers() {
+  const body = $("#ofBody"); if (!body) return;
+  try {
+    const d = await api("/api/admin/offers");
+    if (!$("#ofBody")) return;
+    OF.list = d.offers;
+    body.innerHTML = d.offers.length ? d.offers.map((o) => {
+      const k = OF_KINDS[o.kind] || ["🎯", o.kind_label, ""];
+      const st = o.live ? ["Live", "good"] : !o.active ? ["Off", "bad"] : o.ends_at && new Date(o.ends_at) < Date.now() ? ["Ended", "bad"] : o.starts_at && new Date(o.starts_at) > Date.now() ? ["Scheduled", "warn"] : ["Full", "warn"];
+      const s = o.stats || {};
+      const mine = o.seller_id == null;
+      return `<tr><td><b>${k[0]} ${esc(o.title)}</b><br><small>${esc(k[1])}${o.subtitle ? " · " + esc(o.subtitle) : ""}</small></td>
+        <td>${mine ? '<span class="pill info">Zento</span>' : `<span class="pill warn">Seller</span><br><small>${esc(o.store_name || "")}</small>`}</td>
+        <td><small>${esc(ofWhen(o))}</small></td>
+        <td>${s.plays || 0} played · ${s.wins || 0} won<br><small>${s.redeemed || 0} used · ${money(s.discount_given || 0)} given${o.total_limit != null ? ` · ${o.claimed_count}/${o.total_limit}` : ""}</small></td>
+        <td><span class="pill ${st[1]}">${st[0]}</span></td>
+        <td style="white-space:nowrap">${mine ? `<button class="btn btn-sm btn-ghost" data-oact="edit" data-oid="${o.id}">Edit</button> ` : ""}
+          <button class="btn btn-sm btn-ghost" data-oact="${o.active ? "off" : "on"}" data-oid="${o.id}">${o.active ? "Turn off" : "Turn on"}</button>
+          <button class="btn btn-sm btn-ghost" data-oact="entries" data-oid="${o.id}">Entries</button>
+          ${o.kind === "lucky_draw" ? `<button class="btn btn-sm btn-primary" data-oact="draw" data-oid="${o.id}">Draw winner</button> ` : ""}
+          <button class="btn btn-sm btn-ghost" data-oact="del" data-oid="${o.id}">Delete</button></td></tr>`;
+    }).join("") : `<tr><td colspan="6"><div class="empty">No offers yet. Tap "+ New offer" and pick a type.</div></td></tr>`;
+  } catch (e) { body.innerHTML = `<tr><td colspan="6"><div class="empty">${esc(e.message)}</div></td></tr>`; }
+}
+function ofPickKind() {
+  showModal(`<div class="modal-h"><h2>Choose an offer type</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div>
+  <div class="modal-b"><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">
+  ${Object.entries(OF_KINDS).map(([k, v]) => `<button class="card" data-okind="${k}" style="text-align:left;padding:12px;cursor:pointer;border:1px solid var(--line)"><div style="font-size:24px">${v[0]}</div><b>${v[1]}</b><div class="muted" style="font-size:12px;margin-top:4px">${v[2]}</div></button>`).join("")}
+  </div></div>`);
+}
+function ofPrizeRow(p = {}, i = 0) {
+  const prods = (S.products || []).filter((x) => x.seller_id == null);
+  return `<div class="card" data-prow style="padding:10px;margin-bottom:8px"><div class="form">
+    <label>Prize name<input data-f="label" maxlength="60" value="${esc(p.label || "")}" placeholder="70% OFF"></label>
+    <label>Type<select data-f="prize_type">${Object.entries(OF_PRIZE).map(([k, v]) => `<option value="${k}"${p.prize_type === k ? " selected" : ""}>${v}</option>`).join("")}</select></label>
+    <label>Value (% or ৳)<input data-f="value" type="number" min="0" step="0.01" value="${p.value ?? ""}"></label>
+    <label>Max discount ৳ (percent)<input data-f="max_discount" type="number" min="0" step="0.01" value="${p.max_discount ?? ""}" placeholder="optional"></label>
+    <label>Minimum order ৳<input data-f="min_order" type="number" min="0" step="0.01" value="${Number(p.min_order) || ""}" placeholder="0"></label>
+    <label>Free product<select data-f="product_id"><option value="">-</option>${prods.map((x) => `<option value="${x.id}"${String(p.product_id) === String(x.id) ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>
+    <label>Chance (weight)<input data-f="weight" type="number" min="0" value="${p.weight ?? 10}"></label>
+    <label>Stock (how many to give)<input data-f="stock" type="number" min="0" value="${p.stock ?? ""}" placeholder="unlimited"></label>
+    <label>Valid for (days)<input data-f="valid_days" type="number" min="1" value="${p.valid_days ?? 7}"></label>
+    <label style="justify-content:flex-end"><button class="btn btn-sm btn-ghost" type="button" data-prm>Remove prize</button></label>
+    <input type="hidden" data-f="id" value="${p.id ?? ""}"></div></div>`;
+}
+function ofSaleRow(p = {}) {
+  const prods = (S.products || []).filter((x) => x.seller_id == null);
+  return `<div class="card" data-srow style="padding:10px;margin-bottom:8px"><div class="form">
+    <label class="full">Product<select data-f="product_id">${prods.map((x) => `<option value="${x.id}"${String(p.product_id) === String(x.id) ? " selected" : ""}>${esc(x.name)} (${money(x.price)})</option>`).join("")}</select></label>
+    <label>Discount %<input data-f="discount_percent" type="number" min="1" max="99" step="0.5" value="${p.discount_percent ?? 20}"></label>
+    <label>Units at sale price<input data-f="qty_limit" type="number" min="1" value="${p.qty_limit ?? ""}" placeholder="unlimited"></label>
+    <label class="full" style="align-items:flex-end"><button class="btn btn-sm btn-ghost" type="button" data-srm>Remove product</button></label></div></div>`;
+}
+function ofForm(kind, o) {
+  const v = o || { kind, active: true, show_banner: true, per_user_limit: 1, color: "#00e5c2", config: {}, prizes: [], products: [] };
+  const cfg = v.config || {}, k = OF_KINDS[kind];
+  const hasPrizes = OF_PRIZE_KINDS.includes(kind);
+  const prizes = v.prizes && v.prizes.length ? v.prizes : (hasPrizes ? [{ prize_type: "percent", value: 10, weight: 10 }] : []);
+  showModal(`<div class="modal-h"><h2>${o ? "Edit" : "New"} ${k[0]} ${k[1]}</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div>
+  <div class="modal-b" style="max-height:72vh;overflow:auto"><p class="muted" style="margin-bottom:10px">${k[2]}</p><div class="form">
+    <label class="full">Title<input id="ofTitle" maxlength="80" value="${esc(v.title || "")}" placeholder="Eid Mystery Box"></label>
+    <label class="full">Short line (optional)<input id="ofSub" maxlength="120" value="${esc(v.subtitle || "")}" placeholder="Win free products and up to 70% off"></label>
+    <label class="full">Details (optional)<textarea id="ofDesc" maxlength="600">${esc(v.description || "")}</textarea></label>
+    <label>Starts (Dhaka time)<input id="ofStart" type="datetime-local" value="${ofLocal(v.starts_at)}"></label>
+    <label>Ends (Dhaka time)<input id="ofEnd" type="datetime-local" value="${ofLocal(v.ends_at)}"></label>
+    <label>Colour<input id="ofColor" type="color" value="${esc(v.color || "#00e5c2")}"></label>
+    <label>Button text<input id="ofCta" maxlength="24" value="${esc(v.cta_label || "")}" placeholder="Play now"></label>
+    ${kind !== "flash_sale" && kind !== "event" ? `<label>Tries per customer<input id="ofPer" type="number" min="1" value="${v.per_user_limit ?? 1}"></label>
+    <label>Total available (first N customers)<input id="ofTotal" type="number" min="1" value="${v.total_limit ?? ""}" placeholder="unlimited"></label>` : ""}
+    <label>Image link (optional)<input id="ofImg" value="${esc(v.image_url || "")}" placeholder="https://..."></label>
+    <label style="flex-direction:row;align-items:center;gap:8px"><input id="ofBanner" type="checkbox" style="width:auto"${v.show_banner !== false ? " checked" : ""}> Slide this offer across the top of the website</label>
+    ${kind === "mystery_box" ? `<label>Box appears after (min seconds)<input id="ofDmin" type="number" min="3" value="${cfg.delay_min ?? 8}"></label><label>Box appears before (max seconds)<input id="ofDmax" type="number" min="3" value="${cfg.delay_max ?? 25}"></label>` : ""}
+    ${kind === "spend_save" || kind === "free_gift" || kind === "free_shipping" ? `<label>Minimum order ৳<input id="ofMin" type="number" min="0" value="${cfg.min_order ?? ""}"></label>` : ""}
+    ${kind === "free_shipping" ? `<label>Coupon valid (days)<input id="ofVd" type="number" min="1" value="${cfg.valid_days ?? 3}"></label>` : ""}
+    ${kind === "quiz" ? `<label class="full">Question<input id="ofQ" maxlength="300" value="${esc(cfg.question || "")}"></label>
+      <label class="full">Answer options (one per line, 2 to 6)<textarea id="ofOpts">${esc((cfg.options || []).join("\n"))}</textarea></label>
+      <label>Correct answer number (1 = first line)<input id="ofAns" type="number" min="1" value="${(cfg.answer_index ?? 0) + 1}"></label>
+      <label>Message for a wrong answer<input id="ofWrong" maxlength="160" value="${esc(cfg.wrong_message || "")}"></label>` : ""}
+  </div>
+  ${hasPrizes ? `<h3 style="margin:16px 0 4px">Prizes</h3><p class="muted" style="margin-bottom:8px">${OF_MULTI.includes(kind) ? "One prize is picked at random using the chance (weight). A bigger weight means it is picked more often. Add a \"Nothing\" prize to make wins rare." : "The first prize is used."}</p><div id="ofPrizes">${prizes.map((p, i) => ofPrizeRow(p, i)).join("")}</div>${OF_MULTI.includes(kind) ? `<button class="btn btn-sm btn-ghost" type="button" id="ofAddPrize">+ Add prize</button>` : ""}` : ""}
+  ${kind === "flash_sale" ? `<h3 style="margin:16px 0 4px">Products on sale</h3><p class="muted" style="margin-bottom:8px">Zento's own products only. Sellers run sales on their own products from the Seller Center.</p><div id="ofSale">${(v.products && v.products.length ? v.products : [{}]).map((p) => ofSaleRow(p)).join("")}</div><button class="btn btn-sm btn-ghost" type="button" id="ofAddSale">+ Add product</button>` : ""}
+  <p id="ofErr" style="color:#c62839;min-height:18px;margin-top:8px"></p></div>
+  <div class="modal-f"><button class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" id="ofSave">${o ? "Save" : "Create offer"}</button></div>`);
+  OF.draft = { kind, id: o ? o.id : null };
+  const add = (sel, fn) => { const b = $(sel); if (b) b.addEventListener("click", () => $(sel === "#ofAddPrize" ? "#ofPrizes" : "#ofSale").insertAdjacentHTML("beforeend", fn())); };
+  add("#ofAddPrize", () => ofPrizeRow({ prize_type: "percent", value: 10, weight: 10 })); add("#ofAddSale", () => ofSaleRow({}));
+  $("#ofSave").addEventListener("click", ofSave);
+}
+function ofRows(sel, rowAttr) {
+  return [...document.querySelectorAll(`${sel} [${rowAttr}]`)].map((r) => { const o = {}; r.querySelectorAll("[data-f]").forEach((el) => { o[el.dataset.f] = el.value; }); return o; });
+}
+async function ofSave() {
+  const { kind, id } = OF.draft, g = (s) => { const e = $(s); return e ? e.value : undefined; };
+  const body = { kind, title: g("#ofTitle"), subtitle: g("#ofSub"), description: g("#ofDesc"), starts_at: g("#ofStart"), ends_at: g("#ofEnd"),
+    color: g("#ofColor"), cta_label: g("#ofCta"), image_url: g("#ofImg"), per_user_limit: g("#ofPer"), total_limit: g("#ofTotal"),
+    show_banner: $("#ofBanner").checked, active: true, config: {} };
+  if (kind === "mystery_box") body.config = { delay_min: g("#ofDmin"), delay_max: g("#ofDmax") };
+  if (["spend_save", "free_gift", "free_shipping"].includes(kind)) body.config = { min_order: g("#ofMin"), valid_days: g("#ofVd") };
+  if (kind === "quiz") body.config = { question: g("#ofQ"), options: (g("#ofOpts") || "").split("\n").map((x) => x.trim()).filter(Boolean), answer_index: Number(g("#ofAns") || 1) - 1, wrong_message: g("#ofWrong") };
+  if (OF_PRIZE_KINDS.includes(kind)) body.prizes = ofRows("#ofPrizes", "data-prow");
+  if (kind === "flash_sale") body.products = ofRows("#ofSale", "data-srow");
+  if (id) { const cur = OF.list.find((x) => x.id === id); if (cur) body.active = cur.active; }
+  try {
+    const r = await api(id ? `/api/admin/offers/${id}` : "/api/admin/offers", { method: id ? "PUT" : "POST", body: JSON.stringify(body) });
+    closeModal(); toast(r.message); mpLoadOffers();
+  } catch (e) { $("#ofErr").textContent = e.message; }
+}
+async function ofAction(id, act) {
+  const o = OF.list.find((x) => String(x.id) === String(id));
+  try {
+    if (act === "edit") return ofForm(o.kind, o);
+    if (act === "on" || act === "off") { const r = await api(`/api/admin/offers/${id}`, { method: "PUT", body: JSON.stringify({ active: act === "on" }) }); toast(r.message); }
+    if (act === "del") { if (!confirm("Delete this offer?")) return; const r = await api(`/api/admin/offers/${id}`, { method: "DELETE" }); toast(r.message); }
+    if (act === "draw") { if (!confirm("Pick a random winner now?")) return; const r = await api(`/api/admin/offers/${id}/draw`, { method: "POST", body: "{}" }); toast(r.message); }
+    if (act === "entries") {
+      const d = await api(`/api/admin/offers/${id}/entries`);
+      return showModal(`<div class="modal-h"><h2>Entries · ${esc(o.title)}</h2><button class="icon-btn" data-close aria-label="Close">${ico("close")}</button></div><div class="modal-b" style="max-height:70vh;overflow:auto"><div class="tscroll"><table><thead><tr><th>Customer</th><th>Result</th><th>Coupon</th><th>When</th></tr></thead><tbody>${d.entries.length ? d.entries.map((e) => `<tr><td>${esc(e.name || "")}<br><small>${esc(e.email || "")}</small></td><td>${e.is_winner ? "🏆 " : ""}${esc(e.prize_label || "")}${e.correct === false ? " (wrong)" : ""}</td><td>${esc(e.coupon_code || "")}</td><td><small>${esc(ofLocal(e.created_at).replace("T", " "))}</small></td></tr>`).join("") : '<tr><td colspan="4"><div class="empty">Nobody yet.</div></td></tr>'}</tbody></table></div></div>`);
+    }
+    mpLoadOffers();
+  } catch (e) { toast(e.message, "error"); }
+}
+document.addEventListener("click", (e) => {
+  const n = e.target.closest("#ofNew"); if (n) return ofPickKind();
+  const k = e.target.closest("[data-okind]"); if (k) return ofForm(k.dataset.okind);
+  const a = e.target.closest("[data-oact]"); if (a) return ofAction(a.dataset.oid, a.dataset.oact);
+  const pr = e.target.closest("[data-prm]"); if (pr) return pr.closest("[data-prow]").remove();
+  const sr = e.target.closest("[data-srm]"); if (sr) return sr.closest("[data-srow]").remove();
+});
+
 /* ---------- Activity log (who did what) ---------- */
 const auLabel = { seller_application_approved: "Approved seller application", seller_application_rejected: "Rejected seller application", seller_status: "Changed seller status",
   withdrawal_approved: "Paid a withdrawal", withdrawal_rejected: "Rejected a withdrawal", marketplace_settings: "Changed marketplace settings",
-  coupon_created: "Created coupon", coupon_updated: "Changed coupon", coupon_deleted: "Deleted coupon", review_removed: "Removed a review",
+  coupon_created: "Created coupon", offer_created: "Created offer", offer_updated: "Changed offer", offer_deleted: "Deleted offer", offer_draw: "Drew a lucky draw winner", coupon_updated: "Changed coupon", coupon_deleted: "Deleted coupon", review_removed: "Removed a review",
   order_status: "Changed order status", refund_sent: "Marked refund as sent", commission_taken: "Took out commission" };
 function vAudit() {
   return head("Activity log", "Every important admin action, with who did it and when") + `
@@ -847,12 +1004,13 @@ document.addEventListener("click", (e) => {
 });
 
 function mpWire(k) {
-  if (!["sellers", "withdrawals", "marketplace", "applications", "coupons", "audit", "wallet", "warehouse", "returns", "complaints"].includes(k)) return;
+  if (!["sellers", "withdrawals", "marketplace", "applications", "coupons", "offers", "audit", "wallet", "warehouse", "returns", "complaints"].includes(k)) return;
   if (k === "warehouse") { mpLoadWarehouse(); const f = $("#whF"); if (f) f.addEventListener("change", (e) => { MP.whFilter = e.target.value; mpLoadWarehouse(); }); }
   if (k === "returns") { mpLoadReturns(); const f = $("#retF"); if (f) f.addEventListener("change", (e) => { MP.retFilter = e.target.value; mpLoadReturns(); }); }
   if (k === "complaints") { mpLoadComplaints(); const f = $("#cmpF"); if (f) f.addEventListener("change", (e) => { MP.cmpFilter = e.target.value; mpLoadComplaints(); }); }
   if (k === "audit") mpLoadAudit();
   if (k === "wallet") { mpLoadWallet(); const f = $("#wlFilter"); if (f) f.addEventListener("change", (e) => { MP.walletFilter = e.target.value; mpLoadWallet(); }); const t = $("#wlTake"); if (t) t.addEventListener("click", mpWalletTake); }
+  if (k === "offers") mpLoadOffers();
   if (k === "coupons") { mpLoadCoupons(); const b = $("#cpNew"); if (b) b.addEventListener("click", () => mpCouponForm()); }
   if (k === "applications") { mpLoadApps(); const f = $("#mpAppFilter"); if (f) f.addEventListener("change", (e) => { MP.appFilter = e.target.value; mpLoadApps(); }); }
   if (k === "sellers") { mpLoadSellers(); const f = $("#mpSellerFilter"); if (f) f.addEventListener("change", (e) => { MP.sellerFilter = e.target.value; mpLoadSellers(); }); }
@@ -886,12 +1044,13 @@ const ROUTES = {
   wallet: { t: "Wallet", i: "wallet", v: vWallet },
   audit: { t: "Activity log", i: "analytics", v: vAudit },
   coupons: { t: "Coupons", i: "star", v: vCoupons },
+  offers: { t: "Offers & Events", i: "gift", v: vOffers },
   marketplace: { t: "Marketplace", i: "star", v: vMarket },
   warehouse: { t: "Warehouse", i: "warehouse", v: vWarehouse },
   returns: { t: "Return requests", i: "returns", v: vReturns },
   complaints: { t: "Complaints", i: "complaint", v: vComplaints }
 };
-const MAIN = ["dashboard", "products", "orders", "warehouse", "returns", "complaints", "messages", "customers", "applications", "sellers", "withdrawals", "wallet", "coupons", "marketplace", "audit", "analytics"];
+const MAIN = ["dashboard", "products", "orders", "warehouse", "returns", "complaints", "messages", "customers", "applications", "sellers", "withdrawals", "wallet", "coupons", "offers", "marketplace", "audit", "analytics"];
 const REPORTS = ["lowstock", "recent", "revenue"];
 const curRoute = () => { const k = (location.hash || "#dashboard").slice(1); return ROUTES[k] ? k : "dashboard"; };
 
